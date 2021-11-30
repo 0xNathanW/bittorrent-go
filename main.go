@@ -6,24 +6,28 @@ import (
 	"os"
 	"path"
 
-	ui "github.com/gizak/termui/v3"
+	cli "github.com/0xNathanW/bittorrent-goV2/client"
 )
 
 func main() {
 
-	torrentFile := os.Args[1]
-	err := verifyPath(torrentFile)
+	torrentPath := os.Args[1]
+	err := verifyPath(torrentPath)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	if err := ui.Init(); err != nil {
-		log.Fatalf("failed to initialize termui: %v", err)
+	// if err := ui.Init(); err != nil {
+	// 	log.Fatalf("failed to initialize termui: %v", err)
+	// }
+	// defer ui.Close()
+
+	client, err := cli.NewClient(torrentPath)
+	if err != nil {
+		log.Fatal(err)
 	}
-	defer ui.Close()
-
-	_ = cli.newClient()
-
+	client.PrintInfo()
+	client.GetPeers()
 }
 
 // Verifies torrent file exists.
