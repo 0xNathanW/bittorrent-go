@@ -76,10 +76,14 @@ func (t *Tracker) RequestPeers() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("error decoding tracker response: %s", err)
 	}
+	if len(trackerResponse.PeersString)%6 != 0 {
+		return "", fmt.Errorf("invalid peers string: %s", trackerResponse.PeersString)
+	}
 	return trackerResponse.PeersString, nil
 }
 
 func (t *Tracker) PrintInfo() {
+	fmt.Println("===== Tracker =====")
 	fmt.Printf("Announce URL: %s\n", t.Announce.String())
 	for _, backupAnnounce := range t.BackupAnnounce {
 		fmt.Printf("Backup Announce URL: %s\n", backupAnnounce.String())

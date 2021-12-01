@@ -9,6 +9,7 @@ import (
 	"github.com/0xNathanW/bittorrent-goV2/p2p/message"
 	"github.com/0xNathanW/bittorrent-goV2/torrent"
 	"github.com/0xNathanW/bittorrent-goV2/tracker"
+	"github.com/0xNathanW/bittorrent-goV2/ui"
 )
 
 const clientPort = 6881
@@ -23,8 +24,9 @@ type Client struct {
 
 	Tracker *tracker.Tracker // Tracker.
 
-	// State *State	// Torrent download status.
-	BitField *message.Bitfield // Current bitfield.
+	BitField message.Bitfield // Current bitfield.
+
+	Display *ui.Display // UI.
 }
 
 func NewClient(path string) (*Client, error) {
@@ -38,6 +40,15 @@ func NewClient(path string) (*Client, error) {
 		Port:    clientPort,
 		Torrent: torrent,
 	}
+
+	// Generate bitfield.
+	numPieces := len(torrent.Pieces)
+	if numPieces%8 == 0 {
+		client.BitField = make(message.Bitfield, numPieces/8)
+	} else {
+		client.BitField = make(message.Bitfield, numPieces/8+1)
+	}
+
 	// Setup the tracker.
 	tracker, err := tracker.NewTracker(torrent.Announce, torrent.AnnounceList)
 	if err != nil {
@@ -51,6 +62,18 @@ func NewClient(path string) (*Client, error) {
 	)
 	client.Tracker = tracker
 
+	// Get peers from tracker.
+	err = client.GetPeers()
+	if err != nil {
+		return nil, err
+	}
+
+	// Setup the dashboard.
+	client.Display, err = ui.NewDisplay()
+	if err != nil {
+		return nil, err
+	}
+
 	return client, nil
 }
 
@@ -63,13 +86,13 @@ func idGenerator() [20]byte {
 }
 
 func (c *Client) GetPeers() error {
-	// Get peers from tracker.
+	// Get peer info from tracker.
 	peersString, err := c.Tracker.RequestPeers()
-	fmt.Println(peersString)
 	if err != nil {
 		return err
 	}
 	// Parse peers.
+	c.Peers = p2p.ParsePeers(peersString, len(c.BitField))
 	return nil
 }
 
@@ -77,8 +100,14 @@ func (c *Client) PrintInfo() {
 	fmt.Println("=== Client Info ===")
 	fmt.Println("ID:", c.ID)
 	fmt.Println("Port:", c.Port)
+	fmt.Println("Bitfield", c.BitField)
 	fmt.Println("")
 	c.Torrent.PrintInfo()
 	fmt.Println("")
 	c.Tracker.PrintInfo()
+	fmt.Println("")
+	fmt.Println("=== Peer Info ===")
+	for _, peer := range c.Peers {
+		peer.PrintInfo()
+	}
 }

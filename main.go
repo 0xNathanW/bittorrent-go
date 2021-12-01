@@ -17,17 +17,12 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// if err := ui.Init(); err != nil {
-	// 	log.Fatalf("failed to initialize termui: %v", err)
-	// }
-	// defer ui.Close()
-
 	client, err := cli.NewClient(torrentPath)
 	if err != nil {
 		log.Fatal(err)
 	}
-	client.PrintInfo()
-	client.GetPeers()
+	//client.Display.DrawHeader(client.Torrent)
+	client.Display.DrawGraph()
 }
 
 // Verifies torrent file exists.
