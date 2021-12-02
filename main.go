@@ -17,12 +17,11 @@ func main() {
 		log.Fatal(err)
 	}
 
-	client, err := cli.NewClient(torrentPath)
+	_, err = cli.NewClient(torrentPath)
 	if err != nil {
 		log.Fatal(err)
 	}
-	//client.Display.DrawHeader(client.Torrent)
-	client.Display.DrawGraph()
+
 }
 
 // Verifies torrent file exists.

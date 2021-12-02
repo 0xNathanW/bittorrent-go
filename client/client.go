@@ -26,7 +26,7 @@ type Client struct {
 
 	BitField message.Bitfield // Current bitfield.
 
-	Display *ui.Display // UI.
+	UI *ui.UI // UI.
 }
 
 func NewClient(path string) (*Client, error) {
@@ -63,16 +63,14 @@ func NewClient(path string) (*Client, error) {
 	client.Tracker = tracker
 
 	// Get peers from tracker.
-	err = client.GetPeers()
-	if err != nil {
-		return nil, err
-	}
+	// err = client.GetPeers()
+	// if err != nil {
+	// 	return nil, err
+	// }
 
-	// Setup the dashboard.
-	client.Display, err = ui.NewDisplay()
-	if err != nil {
-		return nil, err
-	}
+	ui, err := ui.NewUI(torrent)
+	client.UI = ui
+	time.Sleep(time.Second * 5)
 
 	return client, nil
 }

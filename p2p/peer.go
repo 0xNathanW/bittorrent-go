@@ -3,6 +3,7 @@ package p2p
 import (
 	"fmt"
 	"net"
+	"time"
 
 	"github.com/0xNathanW/bittorrent-goV2/p2p/message"
 )
@@ -50,4 +51,15 @@ func (p *Peer) PrintInfo() {
 	fmt.Println("IsChoking:", p.IsChoking)
 	fmt.Println("IsInteresting:", p.IsInteresting)
 	fmt.Println("Strikes:", p.Strikes)
+}
+
+func (p *Peer) Connect() error {
+	// Connect to IP on TCP network.
+	addr := net.JoinHostPort(p.IP.String(), p.Port)
+	conn, err := net.DialTimeout("tcp", addr, 10*time.Second)
+	if err != nil {
+		return fmt.Errorf("failed to connect to peer: %v", err)
+	}
+	p.Conn = conn
+	return nil
 }
