@@ -9,6 +9,7 @@ import (
 	"github.com/jackpal/bencode-go"
 )
 
+// Frames enable the torrent file to be parsed from bencoded form.
 type TorrentFrame struct {
 	Info         InfoFrame `bencode:"info"`
 	Announce     string    `bencode:"announce"`
@@ -36,10 +37,12 @@ func UnpackFile(path string) (*TorrentFrame, error) {
 	}
 	defer file.Close()
 	var frame TorrentFrame
+	// Unmarshalling into frame struct.
 	err = bencode.Unmarshal(file, &frame)
 	if err != nil {
 		return nil, fmt.Errorf("could not parse torrent file: %s", err)
 	}
+	// Piece hashes should all be 20 bytes long.
 	if len(frame.Info.PiecesString)%20 != 0 {
 		return nil, fmt.Errorf("invalid pieces length: %d", len(frame.Info.PiecesString))
 	}
@@ -90,6 +93,7 @@ func (i *InfoFrame) splitPieces() [][20]byte {
 }
 
 // Calculates the SHA1 hash of the info dict.
+// This is used to verify the integrity of the torrent file.
 func getInfoHash(path string) ([20]byte, error) {
 	packed, _ := os.Open(path)
 	defer packed.Close()

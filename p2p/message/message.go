@@ -16,6 +16,25 @@ func (m Message) SerialiseMsg() []byte {
 	return buf
 }
 
+// Parses messages from byte arrays.
+func ParseMsgs(raw [][]byte) []Message {
+	var msgs []Message
+	for _, rawMsg := range raw {
+		msg := Message{
+			Length: [4]byte{
+				rawMsg[0],
+				rawMsg[1],
+				rawMsg[2],
+				rawMsg[3],
+			},
+			ID:      rawMsg[4],
+			Payload: rawMsg[5:],
+		}
+		msgs = append(msgs, msg)
+	}
+	return msgs
+}
+
 // Pads to the left to 4 byte array
 func numToBuffer(num int) []byte {
 	buf := make([]byte, 4)

@@ -1,6 +1,8 @@
 package client
 
 import (
+	"fmt"
+
 	"github.com/0xNathanW/bittorrent-goV2/p2p"
 )
 
@@ -29,23 +31,34 @@ func (c *Client) Run() {
 	// dataQ is a buffer of downloaded pieces.
 	dataQ := make(chan *PieceData)
 
-	fileBuf := make([]byte, c.Torrent.Size)
-
+	//fileBuf := make([]byte, c.Torrent.Size)
+	fmt.Println("Starting peer operations")
 	// Start workers.
-	for _, peer := range c.Peers {
-		c.operatePeer(peer, workQ, dataQ)
-	}
+	testPeer := c.Peers[1]
+	c.operatePeer(testPeer, workQ, dataQ)
 
 }
 
 // operatePeer is a goroutine that handles communication with a single peer.
-// If an error occurs, the peer is disconnected.
+// If an error occurs, the peer is disconnected and we return from function.
 func (c *Client) operatePeer(peer *p2p.Peer, workQ chan Piece, dataQ chan<- *PieceData) {
+	peer.PrintInfo()
+
 	// Connect to peer.
 	err := peer.Connect()
 	if err != nil {
 		return
 	}
 	defer peer.Conn.Close()
+	fmt.Println("Successful connection to peer")
+	err = peer.ExchangeHandshake(c.ID, c.Torrent.InfoHash)
+	if err != nil {
+		return
+	}
+	fmt.Println("Handshake complete with", peer.PeerID)
+	// Peers will then send messages about what pieces they have.
+	// This can come in many forms, eg bitfield or have msgs.
+	// This is where we will parse the message and set the peer's bitfield.
+	//msgs := peer.Read()
 
 }
