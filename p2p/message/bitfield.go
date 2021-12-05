@@ -23,16 +23,3 @@ func (b Bitfield) SetPiece(idx int) {
 	}
 	b[idx/8] |= 1 << uint(7-idx%8)
 }
-
-func SendBitfield(b Bitfield) []byte {
-	lengthFix := [4]byte{}
-	lengthBuf := numToBuffer(len(b) + 1)
-	var n int
-	n += copy(lengthFix[:], lengthBuf)
-	msg := Message{
-		Length:  lengthFix,
-		ID:      5,
-		Payload: b,
-	}
-	return msg.SerialiseMsg()
-}

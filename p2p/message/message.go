@@ -1,9 +1,27 @@
 package message
 
+import (
+	"encoding/binary"
+	"fmt"
+)
+
 type Message struct {
-	Length  [4]byte
+	Length  []byte
 	ID      byte
 	Payload []byte
+}
+
+var MsgIDmap = map[byte]string{
+	0:    "Choke",
+	1:    "Unchoke",
+	2:    "Interested",
+	3:    "Not Interested",
+	4:    "Have",
+	5:    "Bitfield",
+	6:    "Request",
+	7:    "Piece",
+	8:    "Cancel",
+	0x54: "Handshake",
 }
 
 // Serialize message to byte array.
@@ -16,25 +34,6 @@ func (m Message) SerialiseMsg() []byte {
 	return buf
 }
 
-// Parses messages from byte arrays.
-func ParseMsgs(raw [][]byte) []Message {
-	var msgs []Message
-	for _, rawMsg := range raw {
-		msg := Message{
-			Length: [4]byte{
-				rawMsg[0],
-				rawMsg[1],
-				rawMsg[2],
-				rawMsg[3],
-			},
-			ID:      rawMsg[4],
-			Payload: rawMsg[5:],
-		}
-		msgs = append(msgs, msg)
-	}
-	return msgs
-}
-
 // Pads to the left to 4 byte array
 func numToBuffer(num int) []byte {
 	buf := make([]byte, 4)
@@ -45,31 +44,37 @@ func numToBuffer(num int) []byte {
 	return buf
 }
 
+func (m Message) PrintInfo() {
+	fmt.Print("\n-- Message --\n")
+	fmt.Printf("Length: %d\n", binary.BigEndian.Uint32(m.Length[:]))
+	fmt.Printf("Type: %v", MsgIDmap[m.ID])
+}
+
 // -------------------- Messages --------------------//
 
 func Choke() []byte {
-	msg := Message{Length: [4]byte{0, 0, 0, 1}, ID: 0}
+	msg := Message{Length: []byte{0, 0, 0, 1}, ID: 0}
 	return msg.SerialiseMsg()
 }
 
 func Unchoke() []byte {
-	msg := Message{Length: [4]byte{0, 0, 0, 1}, ID: 1}
+	msg := Message{Length: []byte{0, 0, 0, 1}, ID: 1}
 	return msg.SerialiseMsg()
 }
 
 func Interested() []byte {
-	msg := Message{Length: [4]byte{0, 0, 0, 1}, ID: 2}
+	msg := Message{Length: []byte{0, 0, 0, 1}, ID: 2}
 	return msg.SerialiseMsg()
 }
 
 func NotInterested() []byte {
-	msg := Message{Length: [4]byte{0, 0, 0, 1}, ID: 3}
+	msg := Message{Length: []byte{0, 0, 0, 1}, ID: 3}
 	return msg.SerialiseMsg()
 }
 
 func Have(idx int) []byte {
 	msg := Message{
-		Length:  [4]byte{0, 0, 0, 5},
+		Length:  []byte{0, 0, 0, 5},
 		ID:      4,
 		Payload: numToBuffer(idx),
 	}
@@ -83,7 +88,7 @@ func Request(idx, begin, length int) []byte {
 	n += copy(payloadBuf[n:], numToBuffer(begin))
 	n += copy(payloadBuf[n:], numToBuffer(length))
 	msg := Message{
-		Length:  [4]byte{0, 0, 0, 13},
+		Length:  []byte{0, 0, 0, 13},
 		ID:      6,
 		Payload: payloadBuf,
 	}
@@ -98,7 +103,7 @@ func Cancel(idx, begin, length int) []byte {
 	n += copy(payloadBuf[n:], numToBuffer(length))
 
 	msg := Message{
-		Length:  [4]byte{0, 0, 0, 13},
+		Length:  []byte{0, 0, 0, 13},
 		ID:      8,
 		Payload: payloadBuf,
 	}

@@ -1,7 +1,6 @@
 package p2p
 
 import (
-	"bytes"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -17,6 +16,7 @@ type Peer struct {
 	IP            net.IP
 	Port          string
 	Conn          net.Conn
+	Reader        io.Reader
 	BitField      msg.Bitfield
 	Choked        bool
 	Interested    bool
@@ -49,7 +49,7 @@ func ParsePeers(peerString string, bfLength int) []*Peer {
 func (p *Peer) PrintInfo() {
 	fmt.Println("PeerID:", p.PeerID)
 	fmt.Println("IP:", p.IP.String())
-	fmt.Println("Port:", []byte(p.Port))
+	fmt.Println("Port:", p.Port)
 	fmt.Println("Choked:", p.Choked)
 	fmt.Println("Interested:", p.Interested)
 	fmt.Println("IsChoking:", p.IsChoking)
@@ -61,7 +61,6 @@ func (p *Peer) PrintInfo() {
 func (p *Peer) Connect() error {
 	// Connect to IP on TCP network.
 	addr := net.JoinHostPort(p.IP.String(), p.Port)
-	fmt.Println("Connecting to", addr)
 	conn, err := net.DialTimeout("tcp", addr, 10*time.Second)
 	if err != nil {
 		return fmt.Errorf("failed to connect to peer: %v", err)
@@ -73,6 +72,7 @@ func (p *Peer) Connect() error {
 // Serialised message is written to peer connection.
 func (p *Peer) Send(data []byte) error {
 	p.Conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+	fmt.Println("\nSending msg: ", msg.MsgIDmap[data[4]])
 	_, err := p.Conn.Write(data)
 	if err != nil {
 		return fmt.Errorf("failed to send data: %v", err)
@@ -80,33 +80,30 @@ func (p *Peer) Send(data []byte) error {
 	return nil
 }
 
-func (p *Peer) Read() []msg.Message {
+// Reads single message from peer connection.
+func (p *Peer) Read() (*msg.Message, error) {
 	p.Conn.SetReadDeadline(time.Now().Add(10 * time.Second))
-
-	rawMessages := make([][]byte, 0)
-	for {
-		// Message buffer starts with 4 bytes for length.
-		message := bytes.NewBuffer(make([]byte, 4))
-		// Length is read from connection.
-		// If EOF is reached, break.
-		_, err := p.Conn.Read(message.Bytes())
-		if err == io.EOF {
-			break
-		}
-		// Length is converted to int.
-		length := int(binary.BigEndian.Uint32(message.Bytes()))
-		// Grow message buffer to fit message.
-		message.Grow(length)
-		// Message is read from connection.
-		// If EOF is reached, break.
-		_, err = p.Conn.Read(message.Bytes())
-		if err == io.EOF {
-			break
-		}
-		// Message is appended to raw message buffer.
-		rawMessages = append(rawMessages, message.Bytes())
+	msg := new(msg.Message)
+	buf := make([]byte, 4)
+	_, err := io.ReadFull(p.Conn, buf)
+	if err != nil {
+		return nil, err
 	}
-	return msg.ParseMsgs(rawMessages)
+	msg.Length = buf
+	length := binary.BigEndian.Uint32(msg.Length)
+	message := make([]byte, length)
+	_, err = io.ReadFull(p.Conn, message)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read message: %v", err)
+	}
+	msg.ID = message[0]
+	if msg.ID > 7 {
+		return nil, fmt.Errorf("unknown message ID: %v", msg.ID)
+	}
+	if length > 1 {
+		msg.Payload = message[1:]
+	}
+	return msg, nil
 }
 
 func (p *Peer) ExchangeHandshake(ID, infoHash [20]byte) error {
@@ -120,7 +117,7 @@ func (p *Peer) ExchangeHandshake(ID, infoHash [20]byte) error {
 	buf := make([]byte, 68)
 	_, err = p.Conn.Read(buf)
 	if err != nil {
-		return fmt.Errorf("failed to receive handshake: %v", err)
+		return fmt.Errorf("error receiving handshake: %v", err)
 	}
 	// Check if handshake is valid, if so return the peer's ID.
 	peerID, err := msg.VerifyHandshake(buf, infoHash)
@@ -129,4 +126,103 @@ func (p *Peer) ExchangeHandshake(ID, infoHash [20]byte) error {
 	}
 	p.PeerID = peerID
 	return nil
+}
+
+func (p *Peer) BuildBitfield() error {
+	message, err := p.Read()
+	if err != nil {
+		return err
+	}
+	switch msg.MsgIDmap[message.ID] {
+	case "Bitfield":
+		if len(message.Payload) != len(p.BitField) {
+			return fmt.Errorf("invalid bitfield length")
+		}
+		p.BitField = message.Payload
+	case "Have":
+		p.BitField.SetPiece(int(binary.BigEndian.Uint32(message.Payload[0:4])))
+		for msg.MsgIDmap[message.ID] == "Have" {
+			message, err = p.Read()
+			if err != nil {
+				return err
+			}
+			p.BitField.SetPiece(int(binary.BigEndian.Uint32(message.Payload[0:4])))
+		}
+	default:
+		return fmt.Errorf("unexpected message: %v", msg.MsgIDmap[message.ID])
+	}
+	return nil
+}
+
+func (p *Peer) DownloadPiece(idx, length int) ([]byte, error) {
+	p.Conn.SetDeadline(time.Now().Add(30 * time.Second))
+	/* Pieces are too long to request in one go.
+	 * We will request a piece in chunks of 16384 bytes (16Kb) called blocks.
+	 * The last block will likely be smaller.
+	 */
+	// requested and downloaded keep track of progress.
+	fmt.Println("Downloading piece: ", idx)
+	requested := 0
+	downloaded := 0
+	data := make([]byte, length)
+	for downloaded < length {
+		if p.IsChoking {
+			return nil, fmt.Errorf("peer is choking")
+		}
+		// Request all blocks in piece.
+		for requested < length {
+			var blockSize int = 16384 // 16Kb
+			// If last block is smaller, set block size to remaining bytes.
+			if requested+blockSize > length {
+				blockSize = length - requested
+			}
+			// Request block.
+			err := p.Send(msg.Request(idx, requested, blockSize))
+			if err != nil {
+				return nil, fmt.Errorf("failed to send request: %v", err)
+			}
+			requested += blockSize
+		}
+
+		// Read responses.
+		for downloaded < length {
+			msg, err := p.Read()
+			if err != nil {
+				return nil, fmt.Errorf("failed to read message: %v", err)
+			}
+			if msg.ID == 7 {
+				fmt.Println("Received block")
+				msgIdx := int(binary.BigEndian.Uint32(msg.Payload[0:4]))
+				msgBegin := int(binary.BigEndian.Uint32(msg.Payload[4:8]))
+				msgData := msg.Payload[8:]
+				// Check piece is the correct index.
+				if msgIdx != idx {
+					return nil, fmt.Errorf(
+						"piece index mismatch, expected: %d, got: %d",
+						idx, msgIdx,
+					)
+				}
+				// Check begin is less than length of data.
+				if msgBegin >= length {
+					return nil, fmt.Errorf(
+						"piece begin index too large, expected: %d, got: %d",
+						length, msgBegin,
+					)
+				}
+				// Check if begin plus length is greater than length of data.
+				if msgBegin+len(msgData) > length {
+					return nil, fmt.Errorf(
+						"piece length too large, expected: %d, got: %d",
+						length, msgBegin+len(msgData),
+					)
+				}
+				// Copy data to data buffer.
+				copy(data[downloaded:], msgData)
+				downloaded += len(msgData)
+			} else {
+				return nil, fmt.Errorf("unexpected message: %v", msg.ID)
+			}
+		}
+	}
+	return data, nil
 }
