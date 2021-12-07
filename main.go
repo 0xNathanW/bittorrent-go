@@ -23,7 +23,6 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Println(len(client.Peers))
 	client.Run()
 	time.Sleep(time.Second * 30)
 }

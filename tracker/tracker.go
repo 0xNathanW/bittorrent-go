@@ -23,6 +23,7 @@ type TrackerResponse struct {
 	Incomplete  int    `bencode:"incomplete"`
 }
 
+// NewTracker creates a new tracker instance.
 func NewTracker(announce string, backupAnnounce []string) (*Tracker, error) {
 	announceURL, err := url.Parse(announce)
 	if err != nil {
@@ -46,6 +47,7 @@ func NewTracker(announce string, backupAnnounce []string) (*Tracker, error) {
 	return tracker, nil
 }
 
+// Add parameters to the announce URL.
 func (t *Tracker) InitParams(infoHash [20]byte, peerId [20]byte, port int, size int) {
 	queryParams := url.Values{}
 	// 20 byte sha1 has of bencoded info from metainfo.

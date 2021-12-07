@@ -3,7 +3,7 @@ module github.com/0xNathanW/bittorrent-goV2
 go 1.17
 
 require (
-	//github.com/guptarohit/asciigraph v0.5.2
+	github.com/guptarohit/asciigraph v0.5.2
 	github.com/jackpal/bencode-go v1.0.0
 	github.com/rivo/tview v0.0.0-20211129142845-821b2667c414
 )

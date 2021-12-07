@@ -25,11 +25,15 @@ type Peer struct {
 	Strikes       int
 }
 
+// String sent by tracker is parsed into peer structs.
 func ParsePeers(peerString string, bfLength int) []*Peer {
 	var peers []*Peer
+	// Each peer is a string of length 6.
 	numPeers := len(peerString) / 6
 	for i := 0; i < numPeers; i++ {
+		// First 4 bytes are IP address.
 		ip := peerString[i*6 : i*6+4]
+		// Next 2 bytes are port.
 		port := []byte(peerString[i*6+4 : i*6+6])
 		peer := &Peer{
 			IP:            net.IP{ip[0], ip[1], ip[2], ip[3]},
@@ -46,6 +50,7 @@ func ParsePeers(peerString string, bfLength int) []*Peer {
 	return peers
 }
 
+// Print for debug.
 func (p *Peer) PrintInfo() {
 	fmt.Println("PeerID:", p.PeerID)
 	fmt.Println("IP:", p.IP.String())
@@ -72,7 +77,6 @@ func (p *Peer) Connect() error {
 // Serialised message is written to peer connection.
 func (p *Peer) Send(data []byte) error {
 	p.Conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
-	fmt.Println("\nSending msg: ", msg.MsgIDmap[data[4]])
 	_, err := p.Conn.Write(data)
 	if err != nil {
 		return fmt.Errorf("failed to send data: %v", err)
@@ -106,7 +110,7 @@ func (p *Peer) Read() (*msg.Message, error) {
 	return msg, nil
 }
 
-func (p *Peer) ExchangeHandshake(ID, infoHash [20]byte) error {
+func (p *Peer) exchangeHandshake(ID, infoHash [20]byte) error {
 	// Send handshake message.
 	p.Conn.SetDeadline(time.Now().Add(15 * time.Second))
 	_, err := p.Conn.Write(msg.Handshake(ID, infoHash))
@@ -128,7 +132,32 @@ func (p *Peer) ExchangeHandshake(ID, infoHash [20]byte) error {
 	return nil
 }
 
-func (p *Peer) BuildBitfield() error {
+// Establish peer ensures a verified connection to a peer
+// and that we have information about what pieces the peer has.
+func (p *Peer) EstablishPeer(ID, infoHash [20]byte) error {
+	// Connect to peer.
+	err := p.Connect()
+	if err != nil {
+		return err
+	}
+
+	err = p.exchangeHandshake(ID, infoHash)
+	if err != nil {
+		return err
+	}
+
+	// Peers will then send messages about what pieces they have.
+	// This can come in many forms, eg bitfield or have msgs.
+	// This is where we will parse the message and set the peer's bitfield.
+	err = p.buildBitfield()
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+// buildBitfield parses the message and sets the peer's bitfield.
+func (p *Peer) buildBitfield() error {
 	message, err := p.Read()
 	if err != nil {
 		return err
@@ -161,7 +190,6 @@ func (p *Peer) DownloadPiece(idx, length int) ([]byte, error) {
 	 * The last block will likely be smaller.
 	 */
 	// requested and downloaded keep track of progress.
-	fmt.Println("Downloading piece: ", idx)
 	requested := 0
 	downloaded := 0
 	data := make([]byte, length)
@@ -191,7 +219,6 @@ func (p *Peer) DownloadPiece(idx, length int) ([]byte, error) {
 				return nil, fmt.Errorf("failed to read message: %v", err)
 			}
 			if msg.ID == 7 {
-				fmt.Println("Received block")
 				msgIdx := int(binary.BigEndian.Uint32(msg.Payload[0:4]))
 				msgBegin := int(binary.BigEndian.Uint32(msg.Payload[4:8]))
 				msgData := msg.Payload[8:]
@@ -217,8 +244,8 @@ func (p *Peer) DownloadPiece(idx, length int) ([]byte, error) {
 					)
 				}
 				// Copy data to data buffer.
-				copy(data[downloaded:], msgData)
-				downloaded += len(msgData)
+				n := copy(data[downloaded:], msgData)
+				downloaded += n
 			} else {
 				return nil, fmt.Errorf("unexpected message: %v", msg.ID)
 			}

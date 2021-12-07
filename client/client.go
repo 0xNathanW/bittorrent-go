@@ -68,10 +68,12 @@ func NewClient(path string) (*Client, error) {
 		return nil, err
 	}
 
-	// ui, err := ui.NewUI(torrent)
-	// client.UI = ui
-	// time.Sleep(time.Second * 5)
+	ui, err := ui.NewUI(torrent)
+	if err != nil {
+		return nil, err
+	}
 
+	client.UI = ui
 	return client, nil
 }
 

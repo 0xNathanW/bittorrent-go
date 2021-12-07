@@ -3,6 +3,8 @@ package client
 import (
 	"crypto/sha1"
 	"fmt"
+	"log"
+	"time"
 
 	"github.com/0xNathanW/bittorrent-goV2/p2p"
 	msg "github.com/0xNathanW/bittorrent-goV2/p2p/message"
@@ -33,26 +35,29 @@ func (c *Client) Run() {
 	// dataQ is a buffer of downloaded pieces.
 	dataQ := make(chan *PieceData)
 
-	//fileBuf := make([]byte, c.Torrent.Size)
-	fmt.Println("Starting peer operations")
 	// Start workers.
-	testPeer := c.Peers[2]
-	c.operatePeer(testPeer, workQ, dataQ)
+	for _, peer := range c.Peers {
+		go c.operatePeer(peer, workQ, dataQ)
+	}
 
+	go c.collectPieces(dataQ)
+	log.Print("Downloading...")
+	if err := c.UI.App.SetRoot(c.UI.Layout, true).Run(); err != nil {
+		fmt.Println(err)
+		panic(err)
+	}
+	time.Sleep(time.Second * 100)
 }
 
 // operatePeer is a goroutine that handles communication with a single peer.
 // If an error occurs, the peer is disconnected and we return from function.
 func (c *Client) operatePeer(peer *p2p.Peer, workQ chan Piece, dataQ chan<- *PieceData) {
-	fmt.Println("Operating peer: ", peer.IP.String())
 
 	// Establish connection with peer.
-	err := c.establishPeer(peer)
+	err := peer.EstablishPeer(c.ID, c.Torrent.InfoHash)
 	if err != nil {
-		fmt.Println("Error establishing connection with peer:", err)
 		return
 	}
-	fmt.Println("Connection established with peer: ", peer.IP.String())
 	defer peer.Conn.Close()
 
 	// Send intent to download from peer.
@@ -79,7 +84,6 @@ func (c *Client) operatePeer(peer *p2p.Peer, workQ chan Piece, dataQ chan<- *Pie
 		// Attempt to download piece.
 		data, err := peer.DownloadPiece(piece.Index, piece.Length)
 		if err != nil {
-			fmt.Println("Error downloading piece:", err)
 			workQ <- piece
 			return
 		}
@@ -91,34 +95,42 @@ func (c *Client) operatePeer(peer *p2p.Peer, workQ chan Piece, dataQ chan<- *Pie
 		var hash [20]byte
 		copy(hash[:], hashSlice)
 		if hash != piece.Hash {
-			fmt.Println("Piece hash mismatch")
 			workQ <- piece
 			continue
 		}
 		// Send piece to dataQ.
-		fmt.Println("Piece downloaded:", piece.Index)
 		dataQ <- &PieceData{piece.Index, data}
 	}
 }
 
-func (c *Client) establishPeer(peer *p2p.Peer) error {
-	// Connect to peer.
-	err := peer.Connect()
-	if err != nil {
-		return err
+func (c *Client) collectPieces(dataQ <-chan *PieceData) {
+	// Output buffer.
+	buf := make([]byte, c.Torrent.Size)
+
+	var done int             // Tracks number of pieces downloaded.
+	var mbDownloaded float64 // Tracks number of bytes downloaded.
+	sec := time.NewTicker(time.Second / 60)
+	startTime := time.Now()
+	var mbps float64
+
+	// Collect downloaded pieces.
+	for done < len(c.Torrent.Pieces) {
+		select {
+		case piece := <-dataQ:
+			start, end, err := c.Torrent.PiecePosition(piece.Index)
+			if err != nil {
+				panic(err) //fix
+			}
+			n := copy(buf[start:end], piece.Data)
+			mbDownloaded += float64(n) / 1024 / 1024
+			done++
+		case <-sec.C:
+			// calculate seconds elapsed
+			elapsed := time.Since(startTime)
+			mbps = float64(mbDownloaded) / float64(elapsed.Seconds())
+			c.UI.Graph.Update(mbps)
+
+		}
 	}
 
-	err = peer.ExchangeHandshake(c.ID, c.Torrent.InfoHash)
-	if err != nil {
-		return err
-	}
-
-	// Peers will then send messages about what pieces they have.
-	// This can come in many forms, eg bitfield or have msgs.
-	// This is where we will parse the message and set the peer's bitfield.
-	err = peer.BuildBitfield()
-	if err != nil {
-		return err
-	}
-	return nil
 }
