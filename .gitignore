@@ -13,3 +13,6 @@
 
 # Any torrent file used for testting.
 *.torrent
+
+# vs code cache
+.vscode
