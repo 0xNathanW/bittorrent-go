@@ -18,7 +18,7 @@ To use simply run the executable with an argument of the path for the .torrent f
 Eg. `{.exe name} {path to .torrent file}`
 
 
-### TODO ###
+## TODO ##
 
 - [] Seeding
 - [] Theme config
