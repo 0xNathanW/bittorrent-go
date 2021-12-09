@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/0xNathanW/bittorrent-goV2/p2p"
-	msg "github.com/0xNathanW/bittorrent-goV2/p2p/message"
+	"github.com/0xNathanW/bittorrent-go/p2p"
+	msg "github.com/0xNathanW/bittorrent-go/p2p/message"
 )
 
 type Piece struct {
@@ -134,6 +134,8 @@ func (c *Client) collectPieces(dataQ <-chan *PieceData) {
 	// Collect downloaded pieces.
 	for done < len(c.Torrent.Pieces) {
 		select {
+		// When a piece is pulled from the data queue,
+		// It is written to the output buffer.
 		case piece := <-dataQ:
 			start, end, err := c.Torrent.PiecePosition(piece.Index)
 			if err != nil {
@@ -141,11 +143,14 @@ func (c *Client) collectPieces(dataQ <-chan *PieceData) {
 			}
 			n := copy(buf[start:end], piece.Data)
 			mbDownloaded += n
+			// Add megabytes to mbps.
 			mbps += float64(n) / 1024 / 1024
 			done++
+		// Every second, UI graph and progress bar is updated.
 		case <-sec.C:
 			c.UI.UpdateProgress(mbDownloaded * 100 / c.Torrent.Size)
 			c.UI.Graph.Update(mbps)
+			// Reset mbps.
 			mbps = 0
 		}
 	}

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/0xNathanW/bittorrent-goV2/torrent"
+	"github.com/0xNathanW/bittorrent-go/torrent"
 	"github.com/rivo/tview"
 )
 
@@ -28,6 +28,7 @@ const banner = `   ___ _ _  _____                          _          ___
 \_____/_|\__\/   \___/|_|  |_|  \___|_| |_|\__|    \____/\___/ 
 `
 
+// Creates a new UI instance.
 func NewUI(t *torrent.Torrent) (*UI, error) {
 
 	ui := &UI{
@@ -69,6 +70,7 @@ func NewUI(t *torrent.Torrent) (*UI, error) {
 	return ui, nil
 }
 
+// Draws elements onto the grid.
 func (ui *UI) drawLayout(t *torrent.Torrent) {
 
 	banner := tview.NewTextView().
@@ -78,7 +80,7 @@ func (ui *UI) drawLayout(t *torrent.Torrent) {
 
 	// A element to display basic information about the torrent.
 	infoText := fmt.Sprintf(
-		"\n\tName: %s\n\tSize: %s\n\tInfo Hash: %s\n",
+		"\tName: %s\n\tSize: %s\n\tInfo Hash: %s",
 		t.Name, t.GetSize(), t.GetInfoHash(),
 	)
 
@@ -141,6 +143,7 @@ func (ui *UI) UpdateLogger(message string) {
 
 func (ui *UI) UpdateProgress(progress int) {
 	ui.ProgressBar.Box.SetTitle(fmt.Sprintf(" Download Progress %d%% ", progress))
+	// Calculate the progress bar width.
 	repitions := int(float64(progress) / 100 * 60)
 	ui.ProgressBar.SetText(fmt.Sprintf(
 		"%s\n%s\n%s\n%s",

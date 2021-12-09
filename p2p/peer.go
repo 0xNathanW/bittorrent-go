@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"time"
 
-	msg "github.com/0xNathanW/bittorrent-goV2/p2p/message"
+	msg "github.com/0xNathanW/bittorrent-go/p2p/message"
 )
 
 type Peer struct {

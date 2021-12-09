@@ -10,6 +10,7 @@ type Graph struct {
 	Object *tview.TextView
 }
 
+// Creates a new graph instance.
 func NewGraph() *Graph {
 	graph := &Graph{
 		Object: tview.NewTextView().
@@ -26,6 +27,8 @@ func NewGraph() *Graph {
 	return graph
 }
 
+// Takes a new value and updates graph,
+// keeping it the same width.
 func (g *Graph) Update(data float64) {
 	g.Data = append(g.Data, data)
 	g.Data = g.Data[1:]

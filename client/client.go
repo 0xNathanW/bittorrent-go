@@ -4,11 +4,11 @@ import (
 	"math/rand"
 	"time"
 
-	"github.com/0xNathanW/bittorrent-goV2/p2p"
-	"github.com/0xNathanW/bittorrent-goV2/p2p/message"
-	"github.com/0xNathanW/bittorrent-goV2/torrent"
-	"github.com/0xNathanW/bittorrent-goV2/tracker"
-	"github.com/0xNathanW/bittorrent-goV2/ui"
+	"github.com/0xNathanW/bittorrent-go/p2p"
+	"github.com/0xNathanW/bittorrent-go/p2p/message"
+	"github.com/0xNathanW/bittorrent-go/torrent"
+	"github.com/0xNathanW/bittorrent-go/tracker"
+	"github.com/0xNathanW/bittorrent-go/ui"
 )
 
 const clientPort = 6881

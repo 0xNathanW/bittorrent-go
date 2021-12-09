@@ -1,4 +1,4 @@
-module github.com/0xNathanW/bittorrent-goV2
+module github.com/0xNathanW/bittorrent-go
 
 go 1.17
 
