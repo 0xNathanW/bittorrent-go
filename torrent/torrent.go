@@ -34,23 +34,7 @@ func NewTorrent(path string) (*Torrent, error) {
 	return torrent, nil
 }
 
-func (t *Torrent) PrintInfo() {
-	fmt.Println("=== Torrent Info ===")
-	fmt.Printf("Name: %s\n", t.Name)
-	fmt.Printf("Announce: %s\n", t.Announce)
-	fmt.Printf("AnnounceList: %v\n", t.AnnounceList)
-	fmt.Printf("InfoHash: %x\n", t.InfoHash)
-	fmt.Printf("Size: %d\n", t.Size)
-	fmt.Printf("Piece length: %d\n", t.PieceLength)
-	fmt.Printf("Pieces: %d\n", len(t.Pieces))
-	fmt.Println("")
-	fmt.Println("=== Files ===")
-	for _, file := range t.Files {
-		fmt.Printf("%s\n", file.Path)
-		fmt.Printf("%d\n", file.Length)
-	}
-}
-
+// Returns string repersentation of size.
 func (t *Torrent) GetSize() string {
 	var size string
 	if t.Size > 1000000000 {
@@ -65,6 +49,7 @@ func (t *Torrent) GetInfoHash() string {
 	return hex.EncodeToString(t.InfoHash[:])
 }
 
+// Returns the begin and end index of a piece.
 func (t *Torrent) PieceBounds(idx int) (int, int) {
 	begin := idx * t.PieceLength
 	end := begin + t.PieceLength

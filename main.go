@@ -18,7 +18,9 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-
+	// Setup client ready for download.
+	// Any error before this stage means the process cant continue.
+	// So panic will be raised.
 	client, err := cli.NewClient(torrentPath)
 	if err != nil {
 		log.Fatal(err)

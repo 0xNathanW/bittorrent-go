@@ -50,25 +50,13 @@ func ParsePeers(peerString string, bfLength int) []*Peer {
 	return peers
 }
 
-// Print for debug.
-func (p *Peer) PrintInfo() {
-	fmt.Println("PeerID:", p.PeerID)
-	fmt.Println("IP:", p.IP.String())
-	fmt.Println("Port:", p.Port)
-	fmt.Println("Choked:", p.Choked)
-	fmt.Println("Interested:", p.Interested)
-	fmt.Println("IsChoking:", p.IsChoking)
-	fmt.Println("IsInteresting:", p.IsInteresting)
-	fmt.Println("Strikes:", p.Strikes)
-}
-
 // Initalises peer connection.
 func (p *Peer) Connect() error {
 	// Connect to IP on TCP network.
 	addr := net.JoinHostPort(p.IP.String(), p.Port)
 	conn, err := net.DialTimeout("tcp", addr, 10*time.Second)
 	if err != nil {
-		return fmt.Errorf("failed to connect to peer: %v", err)
+		return fmt.Errorf("failed connection with peer: %v", err)
 	}
 	p.Conn = conn
 	return nil
@@ -115,13 +103,13 @@ func (p *Peer) exchangeHandshake(ID, infoHash [20]byte) error {
 	p.Conn.SetDeadline(time.Now().Add(15 * time.Second))
 	_, err := p.Conn.Write(msg.Handshake(ID, infoHash))
 	if err != nil {
-		return fmt.Errorf("failed to send handshake: %v", err)
+		return fmt.Errorf("failed to send handshake: %w", err)
 	}
 	// Receive handshake message.
 	buf := make([]byte, 68)
 	_, err = p.Conn.Read(buf)
 	if err != nil {
-		return fmt.Errorf("error receiving handshake: %v", err)
+		return fmt.Errorf("error receiving handshake: %w", err)
 	}
 	// Check if handshake is valid, if so return the peer's ID.
 	peerID, err := msg.VerifyHandshake(buf, infoHash)
@@ -178,7 +166,7 @@ func (p *Peer) buildBitfield() error {
 			p.BitField.SetPiece(int(binary.BigEndian.Uint32(message.Payload[0:4])))
 		}
 	default:
-		return fmt.Errorf("unexpected message: %v", msg.MsgIDmap[message.ID])
+		return fmt.Errorf("unexpected message: %s", msg.MsgIDmap[message.ID])
 	}
 	return nil
 }

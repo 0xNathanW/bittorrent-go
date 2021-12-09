@@ -16,14 +16,13 @@ func NewGraph() *Graph {
 			SetText(asciigraph.Plot(
 				make([]float64, 50),
 				asciigraph.Width(50),
-				asciigraph.Height(15),
-				asciigraph.Caption("DownloadSpeed (MB/s)"),
+				asciigraph.Height(10),
 			)).
 			SetTextAlign(tview.AlignLeft).
 			SetScrollable(false),
 		Data: make([]float64, 50),
 	}
-	graph.Object.Box.SetBorderPadding(2, 2, 2, 2)
+	graph.Object.Box.SetBorderPadding(3, 3, 1, 1)
 	return graph
 }
 
@@ -32,8 +31,8 @@ func (g *Graph) Update(data float64) {
 	g.Data = g.Data[1:]
 	g.Object.SetText(asciigraph.Plot(g.Data,
 		asciigraph.Width(50),
-		asciigraph.Height(15),
+		asciigraph.Height(10),
 		asciigraph.Precision(2),
-		asciigraph.Caption("Download Speed (MB/s))"),
+		asciigraph.Caption("Download Speed (MB/s)"),
 	))
 }

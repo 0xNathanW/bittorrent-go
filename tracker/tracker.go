@@ -67,6 +67,8 @@ func (t *Tracker) InitParams(infoHash [20]byte, peerId [20]byte, port int, size 
 	t.Announce.RawQuery = queryParams.Encode()
 }
 
+// Sends request to tracker, parses response returns string
+// version of a peer list.
 func (t *Tracker) RequestPeers() (string, error) {
 	resp, err := t.Client.Get(t.Announce.String())
 	if err != nil {
@@ -82,12 +84,4 @@ func (t *Tracker) RequestPeers() (string, error) {
 		return "", fmt.Errorf("invalid peers string: %s", trackerResponse.PeersString)
 	}
 	return trackerResponse.PeersString, nil
-}
-
-func (t *Tracker) PrintInfo() {
-	fmt.Println("===== Tracker =====")
-	fmt.Printf("Announce URL: %s\n", t.Announce.String())
-	for _, backupAnnounce := range t.BackupAnnounce {
-		fmt.Printf("Backup Announce URL: %s\n", backupAnnounce.String())
-	}
 }

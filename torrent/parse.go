@@ -9,7 +9,7 @@ import (
 	"github.com/jackpal/bencode-go"
 )
 
-// Frames enable the torrent file to be parsed from bencoded form.
+// Frames enable the torrent file to be unmarshalled from bencoded form.
 type TorrentFrame struct {
 	Info         InfoFrame `bencode:"info"`
 	Announce     string    `bencode:"announce"`
@@ -33,14 +33,14 @@ type FileFrame struct {
 func UnpackFile(path string) (*TorrentFrame, error) {
 	file, err := os.Open(path)
 	if err != nil {
-		return nil, fmt.Errorf("could not open torrent file: %s", err)
+		return nil, fmt.Errorf("could not open torrent file: %w", err)
 	}
 	defer file.Close()
 	var frame TorrentFrame
 	// Unmarshalling into frame struct.
 	err = bencode.Unmarshal(file, &frame)
 	if err != nil {
-		return nil, fmt.Errorf("could not parse torrent file: %s", err)
+		return nil, fmt.Errorf("could not parse torrent file: %w", err)
 	}
 	// Piece hashes should all be 20 bytes long.
 	if len(frame.Info.PiecesString)%20 != 0 {
@@ -55,13 +55,14 @@ func (f *TorrentFrame) Parse(path string) (*Torrent, error) {
 	if err != nil {
 		return nil, err
 	}
-	//Sets size as sum of all file sizes if torrent is multifile.
+	//Sets size as sum of all file sizes if the torrent is multifile.
 	size := f.Info.Size
 	if size == 0 {
 		for _, file := range f.Info.Files {
 			size += file.Length
 		}
 	}
+	// Parse file info.
 	files := make([]File, len(f.Info.Files))
 	for i, file := range f.Info.Files {
 		files[i] = File{

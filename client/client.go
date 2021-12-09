@@ -1,7 +1,6 @@
 package client
 
 import (
-	"fmt"
 	"math/rand"
 	"time"
 
@@ -18,17 +17,19 @@ type Client struct {
 	ID   [20]byte // The client's unique ID.
 	Port int      // The port the client is listening on.
 
-	Torrent *torrent.Torrent // The torrent the client is downloading.
+	Torrent *torrent.Torrent
 
-	Peers []*p2p.Peer // Peers client has connection to.
+	Peers       []*p2p.Peer
+	ActivePeers int
 
-	Tracker *tracker.Tracker // Tracker.
+	Tracker *tracker.Tracker
 
-	BitField message.Bitfield // Current bitfield.
+	BitField message.Bitfield
 
-	UI *ui.UI // UI.
+	UI *ui.UI
 }
 
+// Create a new client instance.
 func NewClient(path string) (*Client, error) {
 	// Uppack and parse torrent file.
 	torrent, err := torrent.NewTorrent(path)
@@ -41,7 +42,7 @@ func NewClient(path string) (*Client, error) {
 		Torrent: torrent,
 	}
 
-	// Generate bitfield.
+	// Generate empty bitfield.
 	numPieces := len(torrent.Pieces)
 	if numPieces%8 == 0 {
 		client.BitField = make(message.Bitfield, numPieces/8)
@@ -94,20 +95,4 @@ func (c *Client) GetPeers() error {
 	// Parse peers.
 	c.Peers = p2p.ParsePeers(peersString, len(c.BitField))
 	return nil
-}
-
-func (c *Client) PrintInfo() {
-	fmt.Println("=== Client Info ===")
-	fmt.Println("ID:", c.ID)
-	fmt.Println("Port:", c.Port)
-	fmt.Println("Bitfield", c.BitField)
-	fmt.Println("")
-	c.Torrent.PrintInfo()
-	fmt.Println("")
-	c.Tracker.PrintInfo()
-	fmt.Println("")
-	fmt.Println("=== Peer Info ===")
-	for _, peer := range c.Peers {
-		peer.PrintInfo()
-	}
 }
