@@ -16,3 +16,11 @@ Build executable:
 To use simply run the executable with an argument of the path for the .torrent file:
 
 Eg. `{.exe name} {path to .torrent file}`
+
+
+# TODO # 
+
+- [] Seeding
+- [] Theme config
+- [] Magnet links
+ 
