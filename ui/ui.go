@@ -138,7 +138,7 @@ func (ui *UI) UpdateActivity(peer, event string, active, peers int) {
 
 // Writes to the error log.
 func (ui *UI) UpdateLogger(message string) {
-	ui.Logger.Write([]byte(message + "\n"))
+	ui.Logger.Write([]byte(message + "\n\n"))
 }
 
 func (ui *UI) UpdateProgress(progress int) {

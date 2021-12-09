@@ -60,7 +60,7 @@ func (c *Client) operatePeer(peer *p2p.Peer, workQ chan Piece, dataQ chan<- *Pie
 	// Establish connection with peer.
 	err := peer.EstablishPeer(c.ID, c.Torrent.InfoHash)
 	if err != nil {
-		c.UI.UpdateLogger(peer.IP.String() + err.Error())
+		c.UI.UpdateLogger(peer.IP.String() + "-" + err.Error())
 		return
 	}
 	defer peer.Conn.Close()
@@ -76,7 +76,7 @@ func (c *Client) operatePeer(peer *p2p.Peer, workQ chan Piece, dataQ chan<- *Pie
 	// Wait for response from peer.
 	message, err := peer.Read()
 	if err != nil {
-		c.UI.UpdateLogger(err.Error())
+		c.UI.UpdateLogger(peer.IP.String() + "-" + err.Error())
 		return
 	}
 	if message.ID == 1 {
@@ -100,7 +100,7 @@ func (c *Client) operatePeer(peer *p2p.Peer, workQ chan Piece, dataQ chan<- *Pie
 
 		data, err := peer.DownloadPiece(piece.Index, piece.Length)
 		if err != nil {
-			c.UI.UpdateLogger(peer.IP.String() + err.Error())
+			c.UI.UpdateLogger(peer.IP.String() + "-" + err.Error())
 			workQ <- piece
 			return
 		}
