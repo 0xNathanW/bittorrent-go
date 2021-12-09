@@ -20,7 +20,7 @@ Eg. `{.exe name} {path to .torrent file}`
 
 ## TODO ##
 
-- [] Seeding
-- [] Theme config
-- [] Magnet links
+- [ ] Seeding
+- [ ] Theme config
+- [ ] Magnet links
  
