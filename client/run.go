@@ -3,6 +3,7 @@ package client
 import (
 	"crypto/sha1"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/0xNathanW/bittorrent-go/p2p"
@@ -154,5 +155,40 @@ func (c *Client) collectPieces(dataQ <-chan *PieceData) {
 			mbps = 0
 		}
 	}
+	// Write output buffer to file.
+	c.writeToFile(buf)
+	c.UI.UpdateLogger("Download complete!")
+	c.UI.UpdateLogger("Safe to close program.")
+}
 
+func (c *Client) writeToFile(buf []byte) error {
+	// If torrent is single file.
+	if len(c.Torrent.Files) == 0 {
+		f, err := os.Create(c.Torrent.Name)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		_, err = f.Write(buf)
+		if err != nil {
+			return err
+		}
+		return nil
+	} else {
+		// If torrent is multi file.
+		start := 0
+		for _, file := range c.Torrent.Files {
+			f, err := os.Create(file.Path)
+			if err != nil {
+				return err
+			}
+			defer f.Close()
+			_, err = f.Write(buf[start : start+file.Length])
+			if err != nil {
+				return err
+			}
+			start += file.Length
+		}
+	}
+	return nil
 }
