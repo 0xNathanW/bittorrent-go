@@ -13,6 +13,7 @@ import (
 
 const clientPort = 6881
 
+// Client is the highest level of the application.
 type Client struct {
 	ID   [20]byte // The client's unique ID.
 	Port int      // The port the client is listening on.
@@ -30,12 +31,14 @@ type Client struct {
 }
 
 // Create a new client instance.
+// Contains all information required to start download.
 func NewClient(path string) (*Client, error) {
 	// Uppack and parse torrent file.
 	torrent, err := torrent.NewTorrent(path)
 	if err != nil {
 		return nil, err
 	}
+
 	client := &Client{
 		ID:      idGenerator(),
 		Port:    clientPort,
@@ -63,8 +66,7 @@ func NewClient(path string) (*Client, error) {
 	)
 	client.Tracker = tracker
 
-	// Get peers from tracker.
-	err = client.GetPeers()
+	err = client.GetPeers() // Get peers from tracker.
 	if err != nil {
 		return nil, err
 	}
@@ -73,8 +75,8 @@ func NewClient(path string) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
-
 	client.UI = ui
+
 	return client, nil
 }
 
