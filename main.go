@@ -24,7 +24,8 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	client.Run()
+	fmt.Println(client.Tracker.Announce.String())
+	//client.Run()
 }
 
 // Verifies torrent file exists.

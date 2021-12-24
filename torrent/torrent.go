@@ -23,11 +23,11 @@ type File struct {
 }
 
 func NewTorrent(path string) (*Torrent, error) {
-	frame, err := UnpackFile(path)
+	frame, err := unpackFile(path)
 	if err != nil {
 		return nil, err
 	}
-	torrent, err := frame.Parse(path)
+	torrent, err := frame.parse(path)
 	if err != nil {
 		return nil, err
 	}
@@ -45,6 +45,7 @@ func (t *Torrent) GetSize() string {
 	return size
 }
 
+// Returns infohash hexstring.
 func (t *Torrent) GetInfoHash() string {
 	return hex.EncodeToString(t.InfoHash[:])
 }
