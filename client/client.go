@@ -15,19 +15,14 @@ const clientPort = 6881
 
 // Client is the highest level of the application.
 type Client struct {
-	ID   [20]byte // The client's unique ID.
-	Port int      // The port the client is listening on.
-
-	Torrent *torrent.Torrent
-
+	ID          [20]byte // The client's unique ID.
+	Port        int      // The port the client is listening on.
+	Torrent     *torrent.Torrent
 	Peers       []*p2p.Peer
 	ActivePeers int
-
-	Tracker *tracker.Tracker
-
-	BitField message.Bitfield
-
-	UI *ui.UI
+	Tracker     *tracker.Tracker
+	BitField    message.Bitfield
+	UI          *ui.UI
 }
 
 // Create a new client instance.
@@ -71,7 +66,7 @@ func NewClient(path string) (*Client, error) {
 		return nil, err
 	}
 
-	ui, err := ui.NewUI(torrent)
+	ui, err := ui.NewUI(torrent, client.Peers)
 	if err != nil {
 		return nil, err
 	}

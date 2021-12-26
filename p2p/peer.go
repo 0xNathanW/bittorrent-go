@@ -9,20 +9,24 @@ import (
 	"time"
 
 	msg "github.com/0xNathanW/bittorrent-go/p2p/message"
+	"github.com/rivo/tview"
 )
 
 type Peer struct {
-	PeerID        [20]byte
-	IP            net.IP
-	Port          string
-	Conn          net.Conn
-	Reader        io.Reader
-	BitField      msg.Bitfield
+	PeerID   [20]byte
+	IP       net.IP
+	Port     string
+	Conn     net.Conn
+	BitField msg.Bitfield
+
+	Active        bool
 	Choked        bool
 	Interested    bool
 	IsChoking     bool
 	IsInteresting bool
-	Strikes       int
+
+	Page     *tview.Frame
+	Activity *tview.TextView
 }
 
 // String sent by tracker is parsed into peer structs.
@@ -39,12 +43,16 @@ func ParsePeers(peerString string, bfLength int) []*Peer {
 			IP:            net.IP{ip[0], ip[1], ip[2], ip[3]},
 			Port:          strconv.Itoa(int(binary.BigEndian.Uint16(port))),
 			BitField:      make(msg.Bitfield, bfLength),
+			Active:        false,
 			Choked:        true,
 			Interested:    false,
 			IsChoking:     true,
 			IsInteresting: false,
-			Strikes:       0,
+			Activity: tview.NewTextView().
+				SetScrollable(true).
+				SetMaxLines(20),
 		}
+		peer.Page = tview.NewFrame(peer.Activity)
 		peers = append(peers, peer)
 	}
 	return peers
@@ -59,6 +67,7 @@ func (p *Peer) Connect() error {
 		return fmt.Errorf("failed connection with peer: %v", err)
 	}
 	p.Conn = conn
+	p.Activity.Write([]byte("Successfully connected to peer."))
 	return nil
 }
 
@@ -69,33 +78,41 @@ func (p *Peer) Send(data []byte) error {
 	if err != nil {
 		return fmt.Errorf("failed to send data: %v", err)
 	}
+	// Update activity, ID is fifth idx.
+	if data[5] != 6 {
+		p.Activity.Write([]byte(fmt.Sprintf("==> %s", msg.MsgIDmap[data[5]])))
+	}
 	return nil
 }
 
 // Reads single message from peer connection.
 func (p *Peer) Read() (*msg.Message, error) {
 	p.Conn.SetReadDeadline(time.Now().Add(10 * time.Second))
-	msg := new(msg.Message)
-	buf := make([]byte, 4)
+	message := new(msg.Message)
+	buf := make([]byte, 4) // Length buffer.
 	_, err := io.ReadFull(p.Conn, buf)
 	if err != nil {
 		return nil, err
 	}
-	msg.Length = buf
-	length := binary.BigEndian.Uint32(msg.Length)
-	message := make([]byte, length)
-	_, err = io.ReadFull(p.Conn, message)
+	message.Length = buf
+	length := binary.BigEndian.Uint32(message.Length)
+	messageBuf := make([]byte, length)
+	_, err = io.ReadFull(p.Conn, messageBuf)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read message: %v", err)
 	}
-	msg.ID = message[0]
-	if msg.ID > 7 {
-		return nil, fmt.Errorf("unknown message ID: %v", msg.ID)
+	message.ID = messageBuf[0]
+	if message.ID > 7 {
+		return nil, fmt.Errorf("unknown message ID: %v", message.ID)
 	}
 	if length > 1 {
-		msg.Payload = message[1:]
+		message.Payload = messageBuf[1:]
 	}
-	return msg, nil
+	// Update activity.
+	if message.ID != 7 {
+		p.Activity.Write([]byte(fmt.Sprintf("<== %s", msg.MsgIDmap[message.ID])))
+	}
+	return message, nil
 }
 
 func (p *Peer) exchangeHandshake(ID, infoHash [20]byte) error {

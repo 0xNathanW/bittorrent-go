@@ -45,8 +45,8 @@ func (c *Client) Run() {
 
 	// GoRoutine for refeshing display.
 	go c.UI.Refresh()
-
-	if err := c.UI.App.SetRoot(c.UI.Layout, true).Run(); err != nil {
+	// Run tview event loop.
+	if err := c.UI.App.Run(); err != nil {
 		fmt.Println(err)
 		panic(err)
 	}
@@ -56,32 +56,24 @@ func (c *Client) Run() {
 // If an error occurs, the peer is disconnected and we return from function.
 func (c *Client) operatePeer(peer *p2p.Peer, workQ chan Piece, dataQ chan<- *PieceData) {
 
-	c.UI.UpdateLogger(fmt.Sprintf("Number of peers: %d", len(c.Peers)))
-
 	// Establish connection with peer.
 	err := peer.EstablishPeer(c.ID, c.Torrent.InfoHash)
 	if err != nil {
-		c.UI.UpdateLogger(peer.IP.String() + "-" + err.Error())
 		return
 	}
 	defer peer.Conn.Close()
 	c.ActivePeers++
-	c.UI.UpdateActivity(peer.IP.String(), "Successfull connection!", c.ActivePeers, len(c.Peers))
 
 	// Send intent to download from peer.
 	peer.Send(msg.Unchoke())
-	c.UI.UpdateActivity(peer.IP.String(), "=> Unchoke", c.ActivePeers, len(c.Peers))
 	peer.Send(msg.Interested())
-	c.UI.UpdateActivity(peer.IP.String(), "=> Interested", c.ActivePeers, len(c.Peers))
 
 	// Wait for response from peer.
 	message, err := peer.Read()
 	if err != nil {
-		c.UI.UpdateLogger(peer.IP.String() + "-" + err.Error())
 		return
 	}
 	if message.ID == 1 {
-		c.UI.UpdateActivity(peer.IP.String(), "<= Unchoke", c.ActivePeers, len(c.Peers))
 		peer.IsChoking = false
 	}
 
@@ -94,14 +86,8 @@ func (c *Client) operatePeer(peer *p2p.Peer, workQ chan Piece, dataQ chan<- *Pie
 			continue
 		}
 		// Attempt to download piece.
-		c.UI.UpdateActivity(
-			peer.IP.String(), fmt.Sprintf("=> Requesting piece %d", piece.Index),
-			c.ActivePeers, len(c.Peers),
-		)
-
 		data, err := peer.DownloadPiece(piece.Index, piece.Length)
 		if err != nil {
-			c.UI.UpdateLogger(peer.IP.String() + "-" + err.Error())
 			workQ <- piece
 			return
 		}
@@ -113,11 +99,9 @@ func (c *Client) operatePeer(peer *p2p.Peer, workQ chan Piece, dataQ chan<- *Pie
 		var hash [20]byte
 		copy(hash[:], hashSlice)
 		if hash != piece.Hash {
-			c.UI.UpdateLogger(peer.IP.String() + " - Piece failed to verify.")
 			workQ <- piece
 			continue
 		}
-		c.UI.UpdateActivity(peer.IP.String(), fmt.Sprintf("<= Downloaded piece %d", piece.Index), c.ActivePeers, len(c.Peers))
 		// Send piece to dataQ.
 		dataQ <- &PieceData{piece.Index, data}
 	}
@@ -157,8 +141,6 @@ func (c *Client) collectPieces(dataQ <-chan *PieceData) {
 	}
 	// Write output buffer to file.
 	c.writeToFile(buf)
-	c.UI.UpdateLogger("Download complete!")
-	c.UI.UpdateLogger("Safe to close program.")
 }
 
 func (c *Client) writeToFile(buf []byte) error {

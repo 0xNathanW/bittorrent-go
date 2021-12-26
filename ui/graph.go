@@ -11,8 +11,9 @@ type Graph struct {
 }
 
 // Creates a new graph instance.
-func NewGraph() *Graph {
+func newGraph() *Graph {
 	graph := &Graph{
+
 		Object: tview.NewTextView().
 			SetText(asciigraph.Plot(
 				make([]float64, 50),
@@ -21,8 +22,10 @@ func NewGraph() *Graph {
 			)).
 			SetTextAlign(tview.AlignLeft).
 			SetScrollable(false),
+
 		Data: make([]float64, 50),
 	}
+
 	graph.Object.Box.SetBorderPadding(3, 3, 1, 1)
 	return graph
 }

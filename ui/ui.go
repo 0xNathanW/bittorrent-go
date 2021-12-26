@@ -2,24 +2,17 @@ package ui
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/0xNathanW/bittorrent-go/p2p"
 	"github.com/0xNathanW/bittorrent-go/torrent"
 	"github.com/rivo/tview"
 )
 
 // Refresh rate for display.
 const RefreshRate = time.Second / 60
-
-type UI struct {
-	App          *tview.Application
-	Layout       *tview.Grid
-	Graph        *Graph
-	ActivityFeed *tview.TextView
-	Logger       *tview.TextView
-	ProgressBar  *tview.TextView
-}
 
 const banner = `   ___ _ _  _____                          _          ___      
   / __(_) |/__   \___  _ __ _ __ ___ _ __ | |_       / _ \___  
@@ -28,45 +21,52 @@ const banner = `   ___ _ _  _____                          _          ___
 \_____/_|\__\/   \___/|_|  |_|  \___|_| |_|\__|    \____/\___/ 
 `
 
+type UI struct {
+	App         *tview.Application
+	Layout      *tview.Grid
+	Graph       *Graph
+	ProgressBar *tview.TextView
+	PeerList    *tview.List
+	PeerPages   *tview.Pages
+}
+
 // Creates a new UI instance.
-func NewUI(t *torrent.Torrent) (*UI, error) {
+func NewUI(t *torrent.Torrent, peers []*p2p.Peer) (*UI, error) {
 
 	ui := &UI{
-
 		App: tview.NewApplication(),
 
 		Layout: tview.NewGrid().
-			SetColumns(64, 64).
-			SetRows(6, 20, 10).
+			SetColumns(0, 0). // Two equal sized columns.
+			SetRows(6, -4, -1).
+			SetMinSize(10, 64). // Row, Col
 			SetBorders(false),
 
-		Graph: NewGraph(),
+		Graph: newGraph(),
 
-		ActivityFeed: tview.NewTextView().
-			ScrollToEnd().
-			SetMaxLines(25).
-			SetScrollable(true).
-			SetDynamicColors(true),
+		PeerList: newPeerList(peers),
 
-		Logger: tview.NewTextView().
-			SetScrollable(true).
-			SetDynamicColors(true).
-			ScrollToEnd().
-			SetMaxLines(15),
+		PeerPages: newPeerPages(peers),
 
 		ProgressBar: tview.NewTextView().
-			SetScrollable(false).
 			SetScrollable(false),
 	}
-	ui.ActivityFeed.SetBorder(true).SetTitle(" Activity Feed ")
+
 	ui.Graph.Object.SetBorder(true).SetTitle(" Download Speed (MB/s) ")
+
 	ui.ProgressBar.SetBorder(true).SetTitle(" Download Progress ")
-	ui.Logger.SetBorder(true).SetTitle(" Log ")
-	ui.ActivityFeed.Box.SetBorderPadding(1, 1, 2, 2)
-	ui.Logger.Box.SetBorderPadding(0, 0, 2, 2)
 	ui.ProgressBar.Box.SetBorderPadding(2, 1, 4, 4)
 
+	// Set the peer info page to change on manouvering list.
+	ui.PeerList.SetChangedFunc(
+		func(index int, mainText string, secondaryText string, shortcut rune) {
+			ui.PeerPages.SwitchToPage(mainText)
+		},
+	)
+	ui.PeerList.SetCurrentItem(0)
+
 	ui.drawLayout(t)
+	ui.App.SetRoot(ui.Layout, true) // Set grid as the root primitive.
 	return ui, nil
 }
 
@@ -100,24 +100,7 @@ func (ui *UI) drawLayout(t *torrent.Torrent) {
 		info,
 		0, 1, 1, 1,
 		0, 0, false,
-	).AddItem(
-		ui.Graph.Object,
-		1, 1, 1, 1,
-		10, 50, false,
-	).AddItem(
-		ui.ActivityFeed,
-		1, 0, 1, 1,
-		10, 64, false,
-	).AddItem(
-		ui.Logger,
-		2, 0, 1, 1,
-		0, 0, false,
-	).AddItem(
-		ui.ProgressBar,
-		2, 1, 1, 1,
-		0, 60, false,
 	)
-
 }
 
 // Refreshes display.
@@ -129,27 +112,33 @@ func (ui *UI) Refresh() {
 	defer tick.Stop()
 }
 
-// Writes to the activity feed.
-func (ui *UI) UpdateActivity(peer, event string, active, peers int) {
-	ui.ActivityFeed.Box.SetTitle(fmt.Sprintf(" Activity Feed - %d/%d peers active ",
-		active, peers))
-	ui.ActivityFeed.Write([]byte(fmt.Sprintf("[%s] %s\n", peer, event)))
-}
-
-// Writes to the error log.
-func (ui *UI) UpdateLogger(message string) {
-	ui.Logger.Write([]byte(message + "\n\n"))
-}
-
 func (ui *UI) UpdateProgress(progress int) {
 	ui.ProgressBar.Box.SetTitle(fmt.Sprintf(" Download Progress %d%% ", progress))
 	// Calculate the progress bar width.
-	repitions := int(float64(progress) / 100 * 60)
+	repititons := int(float64(progress) / 100 * 60)
 	ui.ProgressBar.SetText(fmt.Sprintf(
 		"%s\n%s\n%s\n%s",
-		strings.Repeat("█", repitions),
-		strings.Repeat("█", repitions),
-		strings.Repeat("█", repitions),
-		strings.Repeat("█", repitions),
+		strings.Repeat("█", repititons),
+		strings.Repeat("█", repititons),
+		strings.Repeat("█", repititons),
+		strings.Repeat("█", repititons),
 	))
+}
+
+func newPeerList(peers []*p2p.Peer) *tview.List {
+	peerList := tview.NewList()
+	peerList.SetBorder(true).SetTitle(" Peers ")
+	for i, peer := range peers {
+		peerList.AddItem(peer.IP.String(), strconv.FormatBool(peer.Active), rune(i), nil)
+	}
+	return peerList
+}
+
+func newPeerPages(peers []*p2p.Peer) *tview.Pages {
+	peerPages := tview.NewPages()
+	for _, peer := range peers {
+		peerPages.AddPage(peer.IP.String(), peer.Page, true, false)
+	}
+	peerPages.SwitchToPage(peers[0].IP.String())
+	return peerPages
 }
