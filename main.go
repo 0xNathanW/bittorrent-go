@@ -12,8 +12,8 @@ import (
 func main() {
 
 	// Torrent path is first argument.
-	//torrentPath := os.Args[1]
-	torrentPath := "KNOPPIX 7.2.0 CD.torrent"
+	torrentPath := os.Args[1]
+	//torrentPath := "KNOPPIX%207.2.0%20CD.torrent"
 	err := verifyPath(torrentPath)
 	if err != nil {
 		log.Fatal(err)
@@ -25,11 +25,8 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	if err := client.UI.App.SetFocus(client.UI.PeerList).Run(); err != nil {
-		log.Fatal(err)
-	}
-	//client.Run()
+	//fmt.Println(client.Tracker.Announce.String())
+	client.Run()
 }
 
 // Verifies torrent file exists.
