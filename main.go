@@ -13,6 +13,7 @@ func main() {
 
 	// Torrent path is first argument.
 	torrentPath := os.Args[1]
+	//torrentPath := "KNOPPIX%207.2.0%20CD.torrent"
 	err := verifyPath(torrentPath)
 	if err != nil {
 		log.Fatal(err)
@@ -24,8 +25,8 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Println(client.Tracker.Announce.String())
-	//client.Run()
+	//fmt.Println(client.Tracker.Announce.String())
+	client.Run()
 }
 
 // Verifies torrent file exists.
