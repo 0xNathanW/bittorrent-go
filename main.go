@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"path"
+	"time"
 
 	cli "github.com/0xNathanW/bittorrent-go/client"
 )
@@ -12,8 +13,8 @@ import (
 func main() {
 
 	// Torrent path is first argument.
-	torrentPath := os.Args[1]
-	//torrentPath := "KNOPPIX%207.2.0%20CD.torrent"
+	//torrentPath := os.Args[1]
+	torrentPath := "KNOPPIX 7.2.0 CD.torrent"
 	err := verifyPath(torrentPath)
 	if err != nil {
 		log.Fatal(err)
@@ -26,7 +27,13 @@ func main() {
 		log.Fatal(err)
 	}
 	//fmt.Println(client.Tracker.Announce.String())
-	client.Run()
+	//client.Run()
+	time.Sleep(5 * time.Second)
+	client.UI.UpdateProgress(50)
+
+	if err := client.UI.App.SetFocus(client.UI.PeerList).Run(); err != nil {
+		log.Fatal(err)
+	}
 }
 
 // Verifies torrent file exists.

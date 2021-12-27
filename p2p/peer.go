@@ -52,7 +52,9 @@ func ParsePeers(peerString string, bfLength int) []*Peer {
 				SetScrollable(true).
 				SetMaxLines(20),
 		}
+		peer.Activity.SetBorder(true).SetTitle("Activity")
 		peer.Page = tview.NewFrame(peer.Activity)
+		peer.Page.SetBorder(true).SetTitle(fmt.Sprintf("Peer %s", peer.IP.String()))
 		peers = append(peers, peer)
 	}
 	return peers

@@ -2,7 +2,6 @@ package ui
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
 
@@ -14,7 +13,7 @@ import (
 // Refresh rate for display.
 const RefreshRate = time.Second / 60
 
-const banner = `   ___ _ _  _____                          _          ___      
+const bannerTxt = `   ___ _ _  _____                          _          ___      
   / __(_) |/__   \___  _ __ _ __ ___ _ __ | |_       / _ \___  
  /__\// | __|/ /\/ _ \| '__| '__/ _ \ '_ \| __|____ / /_\/ _ \ 
 / \/  \ | |_/ / | (_) | |  | | |  __/ | | | ||_____/ /_\\ (_) |
@@ -38,8 +37,8 @@ func NewUI(t *torrent.Torrent, peers []*p2p.Peer) (*UI, error) {
 
 		Layout: tview.NewGrid().
 			SetColumns(0, 0). // Two equal sized columns.
-			SetRows(6, -4, -1).
-			SetMinSize(10, 64). // Row, Col
+			SetRows(7, 0, 0, 0).
+			SetMinSize(7, 64). // Row, Col
 			SetBorders(false),
 
 		Graph: newGraph(),
@@ -55,7 +54,7 @@ func NewUI(t *torrent.Torrent, peers []*p2p.Peer) (*UI, error) {
 	ui.Graph.Object.SetBorder(true).SetTitle(" Download Speed (MB/s) ")
 
 	ui.ProgressBar.SetBorder(true).SetTitle(" Download Progress ")
-	ui.ProgressBar.Box.SetBorderPadding(2, 1, 4, 4)
+	ui.ProgressBar.Box.SetBorderPadding(1, 1, 4, 4)
 
 	// Set the peer info page to change on manouvering list.
 	ui.PeerList.SetChangedFunc(
@@ -63,6 +62,7 @@ func NewUI(t *torrent.Torrent, peers []*p2p.Peer) (*UI, error) {
 			ui.PeerPages.SwitchToPage(mainText)
 		},
 	)
+	ui.PeerList.Box.SetBorderPadding(0, 0, 2, 0)
 	ui.PeerList.SetCurrentItem(0)
 
 	ui.drawLayout(t)
@@ -74,13 +74,19 @@ func NewUI(t *torrent.Torrent, peers []*p2p.Peer) (*UI, error) {
 func (ui *UI) drawLayout(t *torrent.Torrent) {
 
 	banner := tview.NewTextView().
-		SetText(banner).
 		SetScrollable(false).
 		SetTextAlign(tview.AlignCenter)
 
+	_, _, _, height := banner.Box.GetRect()
+	verticalPadding := (height - 5) / 2 // Padding to center the banner vertically.
+	fmt.Println(verticalPadding)
+	banner.SetText(
+		strings.Repeat("\n", verticalPadding) + bannerTxt,
+	)
+	banner.Box.SetBorder(false)
 	// A element to display basic information about the torrent.
 	infoText := fmt.Sprintf(
-		"\tName: %s\n\tSize: %s\n\tInfo Hash: %s",
+		"\n\tName: %s\n\tSize: %s\n\tInfo Hash: %s",
 		t.Name, t.GetSize(), t.GetInfoHash(),
 	)
 
@@ -89,16 +95,32 @@ func (ui *UI) drawLayout(t *torrent.Torrent) {
 		SetScrollable(false).
 		SetTextAlign(tview.AlignLeft)
 	info.Box.SetBorder(true).SetTitle(" Torrent Info ")
-	info.Box.SetBorderPadding(0, 0, 1, 1)
+	info.Box.SetBorderPadding(1, 1, 0, 0)
 
 	// Adds elements to grid.
 	ui.Layout.AddItem(
 		banner,
 		0, 0, 1, 1, // row, col, rowspan, colspan
-		5, 63, false,
+		7, 63, false,
 	).AddItem(
 		info,
 		0, 1, 1, 1,
+		0, 0, false,
+	).AddItem(
+		ui.PeerList,
+		1, 0, 1, 1,
+		0, 0, false,
+	).AddItem(
+		ui.PeerPages,
+		2, 0, 2, 1,
+		0, 0, false,
+	).AddItem(
+		ui.Graph.Object,
+		1, 1, 2, 1,
+		0, 0, false,
+	).AddItem(
+		ui.ProgressBar,
+		3, 1, 1, 1,
 		0, 0, false,
 	)
 }
@@ -113,32 +135,46 @@ func (ui *UI) Refresh() {
 }
 
 func (ui *UI) UpdateProgress(progress int) {
-	ui.ProgressBar.Box.SetTitle(fmt.Sprintf(" Download Progress %d%% ", progress))
+	ui.ProgressBar.Box.SetTitle(fmt.Sprintf(" Download Progress: %d%% ", progress))
 	// Calculate the progress bar width.
-	repititons := int(float64(progress) / 100 * 60)
-	ui.ProgressBar.SetText(fmt.Sprintf(
-		"%s\n%s\n%s\n%s",
-		strings.Repeat("█", repititons),
-		strings.Repeat("█", repititons),
-		strings.Repeat("█", repititons),
-		strings.Repeat("█", repititons),
-	))
+	_, _, width, height := ui.ProgressBar.Box.GetInnerRect()
+	repititons := int(float64(progress) / 100 * float64(width))
+	var progressBar string
+	for i := 0; i < height; i++ {
+		progressBar += strings.Repeat("█", repititons)
+		progressBar += "\n"
+	}
+	ui.ProgressBar.SetText(progressBar)
 }
 
 func newPeerList(peers []*p2p.Peer) *tview.List {
 	peerList := tview.NewList()
 	peerList.SetBorder(true).SetTitle(" Peers ")
 	for i, peer := range peers {
-		peerList.AddItem(peer.IP.String(), strconv.FormatBool(peer.Active), rune(i), nil)
+		peerList.AddItem(
+			formatPeerString(peer.IP.String(), i), formatActive(peer.Active), '>', nil,
+		)
 	}
 	return peerList
 }
 
 func newPeerPages(peers []*p2p.Peer) *tview.Pages {
 	peerPages := tview.NewPages()
-	for _, peer := range peers {
-		peerPages.AddPage(peer.IP.String(), peer.Page, true, false)
+	for i, peer := range peers {
+		peerPages.AddPage(formatPeerString(peer.IP.String(), i), peer.Page, true, false)
 	}
 	peerPages.SwitchToPage(peers[0].IP.String())
 	return peerPages
+}
+
+// Util functions.
+func formatActive(active bool) string {
+	if active {
+		return "[green]Active"
+	}
+	return "[red]Inactive"
+}
+
+func formatPeerString(IP string, num int) string {
+	return fmt.Sprintf("Peer: %d - %s", num, IP)
 }
