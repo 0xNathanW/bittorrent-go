@@ -15,19 +15,15 @@ const clientPort = 6881
 
 // Client is the highest level of the application.
 type Client struct {
-	ID   [20]byte // The client's unique ID.
-	Port int      // The port the client is listening on.
-
-	Torrent *torrent.Torrent
-
+	ID          [20]byte // The client's unique ID.
+	Port        int      // The port the client is listening on.
+	Torrent     *torrent.Torrent
 	Peers       []*p2p.Peer
+	PeerMap     map[string]*p2p.Peer
 	ActivePeers int
-
-	Tracker *tracker.Tracker
-
-	BitField message.Bitfield
-
-	UI *ui.UI
+	Tracker     *tracker.Tracker
+	BitField    message.Bitfield
+	UI          *ui.UI
 }
 
 // Create a new client instance.
@@ -53,7 +49,7 @@ func NewClient(path string) (*Client, error) {
 		client.BitField = make(message.Bitfield, numPieces/8+1)
 	}
 
-	// Setup the tracker.
+	// Setup tracker.
 	tracker, err := tracker.NewTracker(torrent.Announce, torrent.AnnounceList)
 	if err != nil {
 		return nil, err
@@ -71,7 +67,7 @@ func NewClient(path string) (*Client, error) {
 		return nil, err
 	}
 
-	ui, err := ui.NewUI(torrent)
+	ui, err := ui.NewUI(torrent, client.Peers)
 	if err != nil {
 		return nil, err
 	}
@@ -89,12 +85,15 @@ func idGenerator() [20]byte {
 }
 
 func (c *Client) GetPeers() error {
-	// Get peer info from tracker.
 	peersString, err := c.Tracker.RequestPeers()
 	if err != nil {
 		return err
 	}
 	// Parse peers.
 	c.Peers = p2p.ParsePeers(peersString, len(c.BitField))
+	c.PeerMap = make(map[string]*p2p.Peer)
+	for _, peer := range c.Peers {
+		c.PeerMap[peer.IP.String()] = peer
+	}
 	return nil
 }

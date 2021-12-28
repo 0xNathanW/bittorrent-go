@@ -11,19 +11,17 @@ type Graph struct {
 }
 
 // Creates a new graph instance.
-func NewGraph() *Graph {
+func newGraph() *Graph {
 	graph := &Graph{
+
 		Object: tview.NewTextView().
-			SetText(asciigraph.Plot(
-				make([]float64, 50),
-				asciigraph.Width(50),
-				asciigraph.Height(10),
-			)).
 			SetTextAlign(tview.AlignLeft).
-			SetScrollable(false),
-		Data: make([]float64, 50),
+			SetScrollable(false).
+			SetWrap(false),
+
+		Data: make([]float64, 100),
 	}
-	graph.Object.Box.SetBorderPadding(3, 3, 1, 1)
+	graph.Object.SetBorderPadding(2, 2, 2, 2)
 	return graph
 }
 
@@ -32,9 +30,10 @@ func NewGraph() *Graph {
 func (g *Graph) Update(data float64) {
 	g.Data = append(g.Data, data)
 	g.Data = g.Data[1:]
+	_, _, width, height := g.Object.GetInnerRect()
 	g.Object.SetText(asciigraph.Plot(g.Data,
-		asciigraph.Width(50),
-		asciigraph.Height(10),
+		asciigraph.Width(width),
+		asciigraph.Height(height),
 		asciigraph.Precision(2),
 		asciigraph.Caption("Download Speed (MB/s)"),
 	))
