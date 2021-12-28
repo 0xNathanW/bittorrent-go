@@ -2,6 +2,7 @@ package p2p
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -19,13 +20,14 @@ type Peer struct {
 	Conn     net.Conn
 	BitField msg.Bitfield
 
-	Active        bool
-	Choked        bool
-	Interested    bool
-	IsChoking     bool
-	IsInteresting bool
-
-	Page     *tview.Frame
+	Active       bool
+	Choked       bool
+	Interested   bool
+	IsChoking    bool
+	IsInterested bool
+	// UI elements.
+	Page     *tview.Flex
+	Info     *tview.TextView
 	Activity *tview.TextView
 }
 
@@ -40,21 +42,27 @@ func ParsePeers(peerString string, bfLength int) []*Peer {
 		// Next 2 bytes are port.
 		port := []byte(peerString[i*6+4 : i*6+6])
 		peer := &Peer{
-			IP:            net.IP{ip[0], ip[1], ip[2], ip[3]},
-			Port:          strconv.Itoa(int(binary.BigEndian.Uint16(port))),
-			BitField:      make(msg.Bitfield, bfLength),
-			Active:        false,
-			Choked:        true,
-			Interested:    false,
-			IsChoking:     true,
-			IsInteresting: false,
+			IP:           net.IP{ip[0], ip[1], ip[2], ip[3]},
+			Port:         strconv.Itoa(int(binary.BigEndian.Uint16(port))),
+			BitField:     make(msg.Bitfield, bfLength),
+			Active:       false,
+			Choked:       true,
+			Interested:   false,
+			IsChoking:    true,
+			IsInterested: false,
+			Page:         tview.NewFlex().SetDirection(tview.FlexRow),
+			Info: tview.NewTextView().
+				SetDynamicColors(true).
+				SetScrollable(false),
 			Activity: tview.NewTextView().
 				SetScrollable(true).
-				SetMaxLines(20),
+				ScrollToEnd().
+				SetDynamicColors(true),
 		}
-		peer.Activity.SetBorder(true).SetTitle("Activity")
-		peer.Page = tview.NewFrame(peer.Activity)
-		peer.Page.SetBorder(true).SetTitle(fmt.Sprintf("Peer %s", peer.IP.String()))
+		peer.UpdateInfo()
+		peer.Activity.SetBorder(true).SetTitle("Activity").SetTitleAlign(tview.AlignLeft).SetBorderPadding(1, 1, 2, 2)
+		peer.Page.AddItem(peer.Info, 0, 1, false).AddItem(peer.Activity, 0, 3, false)
+		peer.Page.SetBorder(true).SetTitle("Peer Info").SetTitleAlign(tview.AlignLeft)
 		peers = append(peers, peer)
 	}
 	return peers
@@ -66,10 +74,10 @@ func (p *Peer) Connect() error {
 	addr := net.JoinHostPort(p.IP.String(), p.Port)
 	conn, err := net.DialTimeout("tcp", addr, 10*time.Second)
 	if err != nil {
-		return fmt.Errorf("failed connection with peer: %v", err)
+		return fmt.Errorf("failed connection: %v", err)
 	}
 	p.Conn = conn
-	p.Activity.Write([]byte("Successfully connected to peer."))
+	p.Activity.Write([]byte("[green]Successfully connected to peer.[-]\n\n"))
 	return nil
 }
 
@@ -80,9 +88,9 @@ func (p *Peer) Send(data []byte) error {
 	if err != nil {
 		return fmt.Errorf("failed to send data: %v", err)
 	}
-	// Update activity, ID is fifth idx.
-	if data[5] != 6 {
-		p.Activity.Write([]byte(fmt.Sprintf("==> %s", msg.MsgIDmap[data[5]])))
+	// Update activity, ID is fourth idx.
+	if data[4] != 6 {
+		p.Activity.Write([]byte(fmt.Sprintf("==> %s\n\n", msg.MsgIDmap[data[4]])))
 	}
 	return nil
 }
@@ -98,6 +106,10 @@ func (p *Peer) Read() (*msg.Message, error) {
 	}
 	message.Length = buf
 	length := binary.BigEndian.Uint32(message.Length)
+	if length == 0 {
+		p.Activity.Write([]byte("<== Keep-Alive\n\n"))
+		return nil, errors.New("keep-alive")
+	}
 	messageBuf := make([]byte, length)
 	_, err = io.ReadFull(p.Conn, messageBuf)
 	if err != nil {
@@ -112,7 +124,7 @@ func (p *Peer) Read() (*msg.Message, error) {
 	}
 	// Update activity.
 	if message.ID != 7 {
-		p.Activity.Write([]byte(fmt.Sprintf("<== %s", msg.MsgIDmap[message.ID])))
+		p.Activity.Write([]byte(fmt.Sprintf("<== %s\n\n", msg.MsgIDmap[message.ID])))
 	}
 	return message, nil
 }
@@ -135,6 +147,7 @@ func (p *Peer) exchangeHandshake(ID, infoHash [20]byte) error {
 	if err != nil {
 		return err
 	}
+	p.Activity.Write([]byte("[green]Handshake successful.[-]\n\n"))
 	p.PeerID = peerID
 	return nil
 }
@@ -147,18 +160,27 @@ func (p *Peer) EstablishPeer(ID, infoHash [20]byte) error {
 	if err != nil {
 		return err
 	}
-
 	err = p.exchangeHandshake(ID, infoHash)
 	if err != nil {
 		return err
 	}
-
 	// Peers will then send messages about what pieces they have.
 	// This can come in many forms, eg bitfield or have msgs.
 	// This is where we will parse the message and set the peer's bitfield.
 	err = p.buildBitfield()
 	if err != nil {
 		return err
+	}
+	// Send intent to download from peer.
+	p.Send(msg.Unchoke())
+	p.Send(msg.Interested())
+	// Wait for response from peer.
+	message, err := p.Read()
+	if err != nil {
+		return err
+	}
+	if message.ID == 1 {
+		p.IsChoking = false
 	}
 	return nil
 }
@@ -171,11 +193,11 @@ func (p *Peer) buildBitfield() error {
 	}
 	switch msg.MsgIDmap[message.ID] {
 	case "Bitfield":
-		if len(message.Payload) != len(p.BitField) {
+		if len(message.Payload) != len(p.BitField) { // Wrong sized bitfield.
 			return fmt.Errorf("invalid bitfield length")
 		}
 		p.BitField = message.Payload
-	case "Have":
+	case "Have": // If "have" need to keep reading until full bitfield sent.
 		p.BitField.SetPiece(int(binary.BigEndian.Uint32(message.Payload[0:4])))
 		for msg.MsgIDmap[message.ID] == "Have" {
 			message, err = p.Read()
@@ -197,6 +219,7 @@ func (p *Peer) DownloadPiece(idx, length int) ([]byte, error) {
 	 * The last block will likely be smaller.
 	 */
 	// requested and downloaded keep track of progress.
+	p.Activity.Write([]byte(fmt.Sprintf("Downloading piece %d.\n\n", idx)))
 	requested := 0
 	downloaded := 0
 	data := make([]byte, length)
@@ -222,8 +245,11 @@ func (p *Peer) DownloadPiece(idx, length int) ([]byte, error) {
 		// Read responses.
 		for downloaded < length {
 			msg, err := p.Read()
+			if errors.Is(err, errors.New("keep-alive")) {
+				continue
+			}
 			if err != nil {
-				return nil, fmt.Errorf("failed to read message: %v", err)
+				return nil, fmt.Errorf("failed to read response: %v", err)
 			}
 			if msg.ID == 7 {
 				msgIdx := int(binary.BigEndian.Uint32(msg.Payload[0:4]))
@@ -259,4 +285,17 @@ func (p *Peer) DownloadPiece(idx, length int) ([]byte, error) {
 		}
 	}
 	return data, nil
+}
+
+func (p *Peer) UpdateInfo() {
+	p.Info.SetText(
+		fmt.Sprintf("\tID: %s\n\n"+
+			"\tIP: %s\n\n"+
+			"\tPort: %s\n\n"+
+			"\tActive: %t\n\n"+
+			"\tIs Choking: %t\n\n"+
+			"\tIs Interested: %t\n",
+			p.PeerID, p.IP.String(), p.Port,
+			p.Active, p.IsChoking, p.IsInterested),
+	)
 }

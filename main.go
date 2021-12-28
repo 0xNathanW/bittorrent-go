@@ -5,7 +5,6 @@ import (
 	"log"
 	"os"
 	"path"
-	"time"
 
 	cli "github.com/0xNathanW/bittorrent-go/client"
 )
@@ -27,13 +26,7 @@ func main() {
 		log.Fatal(err)
 	}
 	//fmt.Println(client.Tracker.Announce.String())
-	//client.Run()
-	time.Sleep(5 * time.Second)
-	client.UI.UpdateProgress(50)
-
-	if err := client.UI.App.SetFocus(client.UI.PeerList).Run(); err != nil {
-		log.Fatal(err)
-	}
+	client.Run()
 }
 
 // Verifies torrent file exists.

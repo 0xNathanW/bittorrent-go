@@ -16,12 +16,12 @@ func newGraph() *Graph {
 
 		Object: tview.NewTextView().
 			SetTextAlign(tview.AlignLeft).
-			SetScrollable(false),
+			SetScrollable(false).
+			SetWrap(false),
 
-		Data: make([]float64, 50),
+		Data: make([]float64, 100),
 	}
-	graph.Object.Box.SetBorderPadding(1, 1, 1, 1)
-	graph.Update(0) // Intialise with 0.
+	graph.Object.SetBorderPadding(2, 2, 2, 2)
 	return graph
 }
 

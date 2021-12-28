@@ -7,6 +7,7 @@ import (
 
 	"github.com/0xNathanW/bittorrent-go/p2p"
 	"github.com/0xNathanW/bittorrent-go/torrent"
+	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 )
 
@@ -24,6 +25,7 @@ type UI struct {
 	App         *tview.Application
 	Layout      *tview.Grid
 	Graph       *Graph
+	Progress    *tview.Frame
 	ProgressBar *tview.TextView
 	PeerList    *tview.List
 	PeerPages   *tview.Pages
@@ -48,13 +50,15 @@ func NewUI(t *torrent.Torrent, peers []*p2p.Peer) (*UI, error) {
 		PeerPages: newPeerPages(peers),
 
 		ProgressBar: tview.NewTextView().
-			SetScrollable(false),
+			SetScrollable(false).
+			SetTextColor(tcell.ColorBlue),
 	}
 
 	ui.Graph.Object.SetBorder(true).SetTitle(" Download Speed (MB/s) ")
 
-	ui.ProgressBar.SetBorder(true).SetTitle(" Download Progress ")
-	ui.ProgressBar.Box.SetBorderPadding(1, 1, 4, 4)
+	ui.Progress = tview.NewFrame(ui.ProgressBar)
+	ui.Progress.SetBorder(true)
+	ui.ProgressBar.SetBorder(true)
 
 	// Set the peer info page to change on manouvering list.
 	ui.PeerList.SetChangedFunc(
@@ -119,32 +123,31 @@ func (ui *UI) drawLayout(t *torrent.Torrent) {
 		1, 1, 2, 1,
 		0, 0, false,
 	).AddItem(
-		ui.ProgressBar,
+		ui.Progress,
 		3, 1, 1, 1,
 		0, 0, false,
 	)
 }
 
-// Refreshes display.
-func (ui *UI) Refresh() {
-	tick := time.NewTicker(RefreshRate)
-	for range tick.C {
-		ui.App.Draw()
-	}
-	defer tick.Stop()
-}
-
-func (ui *UI) UpdateProgress(progress int) {
-	ui.ProgressBar.Box.SetTitle(fmt.Sprintf(" Download Progress: %d%% ", progress))
+func (ui *UI) UpdateProgress(done, total int) {
+	ui.Progress.SetTitle(fmt.Sprintf(" Download Progress: %d%% ", (done*100)/total))
+	ui.Progress.Clear()
+	ui.Progress.AddText(
+		fmt.Sprintf(" %d/%d pieces downloaded\n\n", done, total),
+		true, tview.AlignLeft, tcell.ColorWhite)
 	// Calculate the progress bar width.
-	_, _, width, height := ui.ProgressBar.Box.GetInnerRect()
-	repititons := int(float64(progress) / 100 * float64(width))
-	var progressBar string
-	for i := 0; i < height; i++ {
-		progressBar += strings.Repeat("█", repititons)
-		progressBar += "\n"
+	_, _, _, height1 := ui.Progress.GetInnerRect()
+	ui.Progress.SetBorders(height1/4, 0, 0, 0, 2, 2)
+	_, _, width, height2 := ui.ProgressBar.GetInnerRect()
+	repititions := (done * 100 / total) * width / 100
+	var progress string
+	for i := 0; i < height2; i++ {
+		progress += strings.Repeat("█", repititions)
+		if i != height2-1 {
+			progress += "\n"
+		}
 	}
-	ui.ProgressBar.SetText(progressBar)
+	ui.ProgressBar.SetText(progress)
 }
 
 func newPeerList(peers []*p2p.Peer) *tview.List {
