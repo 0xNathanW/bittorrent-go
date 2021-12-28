@@ -12,8 +12,7 @@ import (
 func main() {
 
 	// Torrent path is first argument.
-	//torrentPath := os.Args[1]
-	torrentPath := "KNOPPIX 7.2.0 CD.torrent"
+	torrentPath := os.Args[1]
 	err := verifyPath(torrentPath)
 	if err != nil {
 		log.Fatal(err)
