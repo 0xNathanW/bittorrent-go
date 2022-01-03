@@ -57,7 +57,8 @@ func (c *Client) operatePeer(peer *p2p.Peer, workQ chan Piece, dataQ chan<- *Pie
 		return
 	}
 	defer peer.Conn.Close()
-
+	peer.Active = true
+	c.ActivePeers++
 	// Begin downloading pieces.
 	for piece := range workQ {
 		peer.UpdateInfo()
@@ -71,6 +72,8 @@ func (c *Client) operatePeer(peer *p2p.Peer, workQ chan Piece, dataQ chan<- *Pie
 		if err != nil {
 			workQ <- piece
 			peer.Activity.Write([]byte("[red]" + err.Error() + "[-]\n\n"))
+			peer.Active = false
+			c.ActivePeers--
 			return
 		}
 		// Verify integrity of piece.
@@ -82,7 +85,7 @@ func (c *Client) operatePeer(peer *p2p.Peer, workQ chan Piece, dataQ chan<- *Pie
 		copy(hash[:], hashSlice)
 		if hash != piece.Hash {
 			workQ <- piece
-			peer.Activity.Write([]byte("[red]Invalid piece hash.[-]\n\n"))
+			peer.Activity.Write([]byte(fmt.Sprintf("[red]Invalid piece hash, idx: %d[-]\n\n", piece.Index)))
 			continue
 		}
 		// Send piece to dataQ.
@@ -114,13 +117,14 @@ func (c *Client) collectPieces(dataQ <-chan *PieceData) {
 			// Add megabytes to mbps.
 			mbps += float64(n) / 1024 / 1024
 			done++
-		// Every second, UI graph and progress bar is updated.
+		// Every second update ui components.
 		case <-sec.C:
 			// Queue UI update and draw.
 			c.UI.App.QueueUpdateDraw(
 				func() {
 					c.UI.Graph.Update(mbps)
 					c.UI.UpdateProgress(done, len(c.Torrent.Pieces))
+					c.UI.UpdateListText(c.Peers)
 				},
 			)
 			mbps = 0 // Reset mbps.

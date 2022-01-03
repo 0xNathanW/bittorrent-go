@@ -19,7 +19,6 @@ type Client struct {
 	Port        int      // The port the client is listening on.
 	Torrent     *torrent.Torrent
 	Peers       []*p2p.Peer
-	PeerMap     map[string]*p2p.Peer
 	ActivePeers int
 	Tracker     *tracker.Tracker
 	BitField    message.Bitfield
@@ -35,7 +34,7 @@ func NewClient(path string) (*Client, error) {
 		return nil, err
 	}
 
-	client := &Client{
+	client := &Client{ // Client instance.
 		ID:      idGenerator(),
 		Port:    clientPort,
 		Torrent: torrent,
@@ -62,8 +61,7 @@ func NewClient(path string) (*Client, error) {
 	)
 	client.Tracker = tracker
 
-	err = client.GetPeers() // Get peers from tracker.
-	if err != nil {
+	if err = client.GetPeers(); err != nil {
 		return nil, err
 	}
 
@@ -84,16 +82,12 @@ func idGenerator() [20]byte {
 	return id
 }
 
+// Client retrieves and parses peers from tracker.
 func (c *Client) GetPeers() error {
 	peersString, err := c.Tracker.RequestPeers()
 	if err != nil {
 		return err
 	}
-	// Parse peers.
 	c.Peers = p2p.ParsePeers(peersString, len(c.BitField))
-	c.PeerMap = make(map[string]*p2p.Peer)
-	for _, peer := range c.Peers {
-		c.PeerMap[peer.IP.String()] = peer
-	}
 	return nil
 }

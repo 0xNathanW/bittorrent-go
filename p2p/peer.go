@@ -2,7 +2,6 @@ package p2p
 
 import (
 	"encoding/binary"
-	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -19,8 +18,10 @@ type Peer struct {
 	Port     string
 	Conn     net.Conn
 	BitField msg.Bitfield
+	Mbps     int
 
 	Active       bool
+	Upload       bool // Should upload to best 4 peers.
 	Choked       bool
 	Interested   bool
 	IsChoking    bool
@@ -37,10 +38,8 @@ func ParsePeers(peerString string, bfLength int) []*Peer {
 	// Each peer is a string of length 6.
 	numPeers := len(peerString) / 6
 	for i := 0; i < numPeers; i++ {
-		// First 4 bytes are IP address.
-		ip := peerString[i*6 : i*6+4]
-		// Next 2 bytes are port.
-		port := []byte(peerString[i*6+4 : i*6+6])
+		ip := peerString[i*6 : i*6+4]             // First 4 bytes are IP address.
+		port := []byte(peerString[i*6+4 : i*6+6]) // Next 2 bytes are port.
 		peer := &Peer{
 			IP:           net.IP{ip[0], ip[1], ip[2], ip[3]},
 			Port:         strconv.Itoa(int(binary.BigEndian.Uint16(port))),
@@ -59,10 +58,10 @@ func ParsePeers(peerString string, bfLength int) []*Peer {
 				ScrollToEnd().
 				SetDynamicColors(true),
 		}
-		peer.UpdateInfo()
+		peer.UpdateInfo() // Initialise info.
 		peer.Activity.SetBorder(true).SetTitle("Activity").SetTitleAlign(tview.AlignLeft).SetBorderPadding(1, 1, 2, 2)
-		peer.Page.AddItem(peer.Info, 0, 1, false).AddItem(peer.Activity, 0, 3, false)
-		peer.Page.SetBorder(true).SetTitle("Peer Info").SetTitleAlign(tview.AlignLeft)
+		peer.Page.AddItem(peer.Info, 0, 1, false).AddItem(peer.Activity, 0, 3, false)  // Add elements to page.
+		peer.Page.SetBorder(true).SetTitle("Peer Info").SetTitleAlign(tview.AlignLeft) // Set page border.
 		peers = append(peers, peer)
 	}
 	return peers
@@ -70,9 +69,9 @@ func ParsePeers(peerString string, bfLength int) []*Peer {
 
 // Initalises peer connection.
 func (p *Peer) Connect() error {
-	// Connect to IP on TCP network.
+	// Connect to IP on TCP.
 	addr := net.JoinHostPort(p.IP.String(), p.Port)
-	conn, err := net.DialTimeout("tcp", addr, 10*time.Second)
+	conn, err := net.DialTimeout("tcp", addr, 15*time.Second)
 	if err != nil {
 		return fmt.Errorf("failed connection: %v", err)
 	}
@@ -86,7 +85,7 @@ func (p *Peer) Send(data []byte) error {
 	p.Conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 	_, err := p.Conn.Write(data)
 	if err != nil {
-		return fmt.Errorf("failed to send data: %v", err)
+		return fmt.Errorf("failed to send data: %w", err)
 	}
 	// Update activity, ID is fourth idx.
 	if data[4] != 6 {
@@ -100,19 +99,17 @@ func (p *Peer) Read() (*msg.Message, error) {
 	p.Conn.SetReadDeadline(time.Now().Add(10 * time.Second))
 	message := new(msg.Message)
 	buf := make([]byte, 4) // Length buffer.
-	_, err := io.ReadFull(p.Conn, buf)
-	if err != nil {
+	if _, err := io.ReadFull(p.Conn, buf); err != nil {
 		return nil, err
 	}
 	message.Length = buf
 	length := binary.BigEndian.Uint32(message.Length)
 	if length == 0 {
 		p.Activity.Write([]byte("<== Keep-Alive\n\n"))
-		return nil, errors.New("keep-alive")
+		return nil, nil
 	}
 	messageBuf := make([]byte, length)
-	_, err = io.ReadFull(p.Conn, messageBuf)
-	if err != nil {
+	if _, err := io.ReadFull(p.Conn, messageBuf); err != nil {
 		return nil, fmt.Errorf("failed to read message: %v", err)
 	}
 	message.ID = messageBuf[0]
@@ -122,24 +119,57 @@ func (p *Peer) Read() (*msg.Message, error) {
 	if length > 1 {
 		message.Payload = messageBuf[1:]
 	}
-	// Update activity.
-	if message.ID != 7 {
+	if message.ID != 7 { // Update activity, as long as not block, as they will clog feed.
 		p.Activity.Write([]byte(fmt.Sprintf("<== %s\n\n", msg.MsgIDmap[message.ID])))
 	}
 	return message, nil
 }
 
+func (p *Peer) HandleMsg(m *msg.Message) error {
+	switch m.ID {
+	case 0: // Choke
+		p.IsChoking = true
+	case 1: // Unchoke
+		p.IsChoking = false
+	case 2: // Interested
+		p.IsInterested = true
+	case 3: // Not interested
+		p.IsInterested = false
+	case 4: // Have
+		p.BitField.SetPiece(int(binary.BigEndian.Uint32(m.Payload[0:4])))
+		var err error
+		for err == nil {
+			message, err := p.Read()
+			if err != nil {
+				return err
+			}
+			if msg.MsgIDmap[message.ID] != "Have" {
+				break
+			}
+			p.BitField.SetPiece(int(binary.BigEndian.Uint32(message.Payload[0:4])))
+		}
+	case 5: // Bitfield
+		p.BitField = msg.Bitfield(m.Payload)
+	case 6: // Request
+		return fmt.Errorf("request message not implemented")
+	case 7: // Piece
+		return fmt.Errorf("piece message not expected")
+	default:
+		return fmt.Errorf("unknown message ID: %v", m.ID)
+	}
+	return nil
+}
+
 func (p *Peer) exchangeHandshake(ID, infoHash [20]byte) error {
+	p.Conn.SetDeadline(time.Now().Add(20 * time.Second))
 	// Send handshake message.
-	p.Conn.SetDeadline(time.Now().Add(15 * time.Second))
 	_, err := p.Conn.Write(msg.Handshake(ID, infoHash))
 	if err != nil {
 		return fmt.Errorf("failed to send handshake: %w", err)
 	}
 	// Receive handshake message.
 	buf := make([]byte, 68)
-	_, err = p.Conn.Read(buf)
-	if err != nil {
+	if _, err = p.Conn.Read(buf); err != nil {
 		return fmt.Errorf("error receiving handshake: %w", err)
 	}
 	// Check if handshake is valid, if so return the peer's ID.
@@ -155,33 +185,30 @@ func (p *Peer) exchangeHandshake(ID, infoHash [20]byte) error {
 // Establish peer ensures a verified connection to a peer
 // and that we have information about what pieces the peer has.
 func (p *Peer) EstablishPeer(ID, infoHash [20]byte) error {
-	// Connect to peer.
-	err := p.Connect()
-	if err != nil {
+	// Connect to peer and exchange handshake.
+	if err := p.Connect(); err != nil {
 		return err
 	}
-	err = p.exchangeHandshake(ID, infoHash)
-	if err != nil {
+	if err := p.exchangeHandshake(ID, infoHash); err != nil {
 		return err
 	}
 	// Peers will then send messages about what pieces they have.
 	// This can come in many forms, eg bitfield or have msgs.
 	// This is where we will parse the message and set the peer's bitfield.
-	err = p.buildBitfield()
-	if err != nil {
+	if err := p.buildBitfield(); err != nil {
 		return err
 	}
 	// Send intent to download from peer.
-	p.Send(msg.Unchoke())
 	p.Send(msg.Interested())
-	// Wait for response from peer.
+	// Wait for unchoke from peer.
 	message, err := p.Read()
 	if err != nil {
 		return err
 	}
-	if message.ID == 1 {
-		p.IsChoking = false
+	if message.ID != 1 {
+		return fmt.Errorf("expected unchoke message, got: %v", msg.MsgIDmap[message.ID])
 	}
+	p.IsChoking = false
 	return nil
 }
 
@@ -199,15 +226,21 @@ func (p *Peer) buildBitfield() error {
 		p.BitField = message.Payload
 	case "Have": // If "have" need to keep reading until full bitfield sent.
 		p.BitField.SetPiece(int(binary.BigEndian.Uint32(message.Payload[0:4])))
-		for msg.MsgIDmap[message.ID] == "Have" {
+		for err == nil {
 			message, err = p.Read()
 			if err != nil {
 				return err
 			}
+			if msg.MsgIDmap[message.ID] != "Have" {
+				break
+			}
 			p.BitField.SetPiece(int(binary.BigEndian.Uint32(message.Payload[0:4])))
 		}
 	default:
-		return fmt.Errorf("unexpected message: %s", msg.MsgIDmap[message.ID])
+		if err := p.HandleMsg(message); err != nil {
+			return err
+		}
+		return fmt.Errorf("peer failed to send which pieces it has")
 	}
 	return nil
 }
@@ -235,8 +268,7 @@ func (p *Peer) DownloadPiece(idx, length int) ([]byte, error) {
 				blockSize = length - requested
 			}
 			// Request block.
-			err := p.Send(msg.Request(idx, requested, blockSize))
-			if err != nil {
+			if err := p.Send(msg.Request(idx, requested, blockSize)); err != nil {
 				return nil, fmt.Errorf("failed to send request: %v", err)
 			}
 			requested += blockSize
@@ -245,9 +277,6 @@ func (p *Peer) DownloadPiece(idx, length int) ([]byte, error) {
 		// Read responses.
 		for downloaded < length {
 			msg, err := p.Read()
-			if errors.Is(err, errors.New("keep-alive")) {
-				continue
-			}
 			if err != nil {
 				return nil, fmt.Errorf("failed to read response: %v", err)
 			}
@@ -280,7 +309,10 @@ func (p *Peer) DownloadPiece(idx, length int) ([]byte, error) {
 				n := copy(data[downloaded:], msgData)
 				downloaded += n
 			} else {
-				return nil, fmt.Errorf("unexpected message: %v", msg.ID)
+				if err := p.HandleMsg(msg); err != nil {
+					return nil, err
+				}
+
 			}
 		}
 	}
@@ -289,13 +321,13 @@ func (p *Peer) DownloadPiece(idx, length int) ([]byte, error) {
 
 func (p *Peer) UpdateInfo() {
 	p.Info.SetText(
-		fmt.Sprintf("\tID: %s\n\n"+
-			"\tIP: %s\n\n"+
-			"\tPort: %s\n\n"+
-			"\tActive: %t\n\n"+
-			"\tIs Choking: %t\n\n"+
-			"\tIs Interested: %t\n",
+		fmt.Sprintf(
+			"\tID: %s\n\n"+
+				"\tIP: %s\n\n"+
+				"\tPort: %s\n\n"+
+				"\tIs Choking: %t\n\n"+
+				"\tIs Interested: %t\n",
 			p.PeerID, p.IP.String(), p.Port,
-			p.Active, p.IsChoking, p.IsInterested),
+			p.IsChoking, p.IsInterested),
 	)
 }
