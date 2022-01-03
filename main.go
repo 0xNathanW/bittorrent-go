@@ -12,9 +12,9 @@ import (
 func main() {
 
 	// Torrent path is first argument.
-	torrentPath := os.Args[1]
-	err := verifyPath(torrentPath)
-	if err != nil {
+	//torrentPath := os.Args[1]
+	torrentPath := "budgie-remix-16.10-amd64.iso.torrent"
+	if err := verifyPath(torrentPath); err != nil {
 		log.Fatal(err)
 	}
 	// Setup client ready for download.
@@ -24,7 +24,6 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	//fmt.Println(client.Tracker.Announce.String())
 	client.Run()
 }
 

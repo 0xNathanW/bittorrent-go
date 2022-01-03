@@ -150,6 +150,12 @@ func (ui *UI) UpdateProgress(done, total int) {
 	ui.ProgressBar.SetText(progress)
 }
 
+func (ui *UI) UpdateListText(peers []*p2p.Peer) {
+	for i, peer := range peers {
+		ui.PeerList.SetItemText(i, formatPeerString(peer.IP.String(), i), formatActive(peer.Active))
+	}
+}
+
 func newPeerList(peers []*p2p.Peer) *tview.List {
 	peerList := tview.NewList()
 	peerList.SetBorder(true).SetTitle(" Peers ")

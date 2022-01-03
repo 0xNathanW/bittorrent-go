@@ -76,8 +76,7 @@ func (t *Tracker) RequestPeers() (string, error) {
 	}
 	defer resp.Body.Close()
 	trackerResponse := TrackerResponse{}
-	err = bencode.Unmarshal(resp.Body, &trackerResponse)
-	if err != nil {
+	if err = bencode.Unmarshal(resp.Body, &trackerResponse); err != nil {
 		return "", fmt.Errorf("error decoding tracker response: %s", err)
 	}
 	if len(trackerResponse.PeersString)%6 != 0 {
