@@ -13,12 +13,13 @@ import (
 )
 
 type Peer struct {
-	PeerID   [20]byte
-	IP       net.IP
-	Port     string
-	Conn     net.Conn
-	BitField msg.Bitfield
-	Mbps     int
+	PeerID     [20]byte
+	IP         net.IP
+	Port       string
+	Conn       net.Conn
+	Reader     io.Reader
+	BitField   msg.Bitfield
+	Downloaded int // Tracks bytes downloaded over certain time period.
 
 	Active       bool
 	Upload       bool // Should upload to best 4 peers.
@@ -60,7 +61,7 @@ func ParsePeers(peerString string, bfLength int) []*Peer {
 		}
 		peer.UpdateInfo() // Initialise info.
 		peer.Activity.SetBorder(true).SetTitle("Activity").SetTitleAlign(tview.AlignLeft).SetBorderPadding(1, 1, 2, 2)
-		peer.Page.AddItem(peer.Info, 0, 1, false).AddItem(peer.Activity, 0, 3, false)  // Add elements to page.
+		peer.Page.AddItem(peer.Info, 0, 1, false).AddItem(peer.Activity, 0, 2, false)  // Add elements to page.
 		peer.Page.SetBorder(true).SetTitle("Peer Info").SetTitleAlign(tview.AlignLeft) // Set page border.
 		peers = append(peers, peer)
 	}
@@ -125,25 +126,31 @@ func (p *Peer) Read() (*msg.Message, error) {
 	return message, nil
 }
 
-func (p *Peer) HandleMsg(m *msg.Message) error {
+func (p *Peer) HandleMsg(m *msg.Message) ([]byte, error) {
 	switch m.ID {
 	case 0: // Choke
 		p.IsChoking = true
 	case 1: // Unchoke
 		p.IsChoking = false
 	case 2: // Interested
+		// If the
 		p.IsInterested = true
+		if p.Upload {
+			p.Choked = false
+			p.Send(msg.Unchoke())
+		}
 	case 3: // Not interested
 		p.IsInterested = false
-	case 4: // Have
+	case 4: // Have messages can be sent back-to-back.
 		p.BitField.SetPiece(int(binary.BigEndian.Uint32(m.Payload[0:4])))
 		var err error
 		for err == nil {
 			message, err := p.Read()
 			if err != nil {
-				return err
+				return nil, err
 			}
 			if msg.MsgIDmap[message.ID] != "Have" {
+				p.HandleMsg(message)
 				break
 			}
 			p.BitField.SetPiece(int(binary.BigEndian.Uint32(message.Payload[0:4])))
@@ -151,13 +158,14 @@ func (p *Peer) HandleMsg(m *msg.Message) error {
 	case 5: // Bitfield
 		p.BitField = msg.Bitfield(m.Payload)
 	case 6: // Request
-		return fmt.Errorf("request message not implemented")
+		//TODO: Implement, only upload to the best peers.
+		return nil, fmt.Errorf("request message not implemented")
 	case 7: // Piece
-		return fmt.Errorf("piece message not expected")
+		return m.Payload, nil
 	default:
-		return fmt.Errorf("unknown message ID: %v", m.ID)
+		return nil, fmt.Errorf("unknown message ID: %v", m.ID)
 	}
-	return nil
+	return nil, nil
 }
 
 func (p *Peer) exchangeHandshake(ID, infoHash [20]byte) error {
@@ -205,10 +213,9 @@ func (p *Peer) EstablishPeer(ID, infoHash [20]byte) error {
 	if err != nil {
 		return err
 	}
-	if message.ID != 1 {
-		return fmt.Errorf("expected unchoke message, got: %v", msg.MsgIDmap[message.ID])
-	}
-	p.IsChoking = false
+	// Sometimes peers will annoyingly send have messages after bitfields.
+	// However we should be expecting an unchoke message.
+	p.HandleMsg(message)
 	return nil
 }
 
@@ -218,29 +225,11 @@ func (p *Peer) buildBitfield() error {
 	if err != nil {
 		return err
 	}
-	switch msg.MsgIDmap[message.ID] {
-	case "Bitfield":
-		if len(message.Payload) != len(p.BitField) { // Wrong sized bitfield.
-			return fmt.Errorf("invalid bitfield length")
-		}
-		p.BitField = message.Payload
-	case "Have": // If "have" need to keep reading until full bitfield sent.
-		p.BitField.SetPiece(int(binary.BigEndian.Uint32(message.Payload[0:4])))
-		for err == nil {
-			message, err = p.Read()
-			if err != nil {
-				return err
-			}
-			if msg.MsgIDmap[message.ID] != "Have" {
-				break
-			}
-			p.BitField.SetPiece(int(binary.BigEndian.Uint32(message.Payload[0:4])))
-		}
-	default:
-		if err := p.HandleMsg(message); err != nil {
-			return err
-		}
-		return fmt.Errorf("peer failed to send which pieces it has")
+	if message.ID == 4 || message.ID == 5 {
+		p.HandleMsg(message)
+	} else {
+		p.HandleMsg(message)
+		return fmt.Errorf("expected user piece info, got: %v", msg.MsgIDmap[message.ID])
 	}
 	return nil
 }
@@ -276,14 +265,21 @@ func (p *Peer) DownloadPiece(idx, length int) ([]byte, error) {
 
 		// Read responses.
 		for downloaded < length {
+
 			msg, err := p.Read()
 			if err != nil {
 				return nil, fmt.Errorf("failed to read response: %v", err)
 			}
-			if msg.ID == 7 {
-				msgIdx := int(binary.BigEndian.Uint32(msg.Payload[0:4]))
-				msgBegin := int(binary.BigEndian.Uint32(msg.Payload[4:8]))
-				msgData := msg.Payload[8:]
+
+			payload, err := p.HandleMsg(msg)
+			if err != nil {
+				return nil, err
+			}
+
+			if payload != nil {
+				msgIdx := int(binary.BigEndian.Uint32(payload[0:4]))
+				msgBegin := int(binary.BigEndian.Uint32(payload[4:8]))
+				msgData := payload[8:]
 				// Check piece is the correct index.
 				if msgIdx != idx {
 					return nil, fmt.Errorf(
@@ -307,12 +303,8 @@ func (p *Peer) DownloadPiece(idx, length int) ([]byte, error) {
 				}
 				// Copy data to data buffer.
 				n := copy(data[downloaded:], msgData)
+				p.Downloaded += n
 				downloaded += n
-			} else {
-				if err := p.HandleMsg(msg); err != nil {
-					return nil, err
-				}
-
 			}
 		}
 	}
@@ -322,12 +314,11 @@ func (p *Peer) DownloadPiece(idx, length int) ([]byte, error) {
 func (p *Peer) UpdateInfo() {
 	p.Info.SetText(
 		fmt.Sprintf(
-			"\tID: %s\n\n"+
+			"\n\tID: %s\n\n"+
 				"\tIP: %s\n\n"+
 				"\tPort: %s\n\n"+
-				"\tIs Choking: %t\n\n"+
-				"\tIs Interested: %t\n",
-			p.PeerID, p.IP.String(), p.Port,
-			p.IsChoking, p.IsInterested),
+				"\tAccepting requests: %t\n\n"+
+				"\tBytes per 10 secs: %d\n",
+			p.PeerID, p.IP.String(), p.Port, p.Upload, p.Downloaded),
 	)
 }

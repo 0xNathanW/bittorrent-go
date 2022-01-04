@@ -129,12 +129,17 @@ func (ui *UI) drawLayout(t *torrent.Torrent) {
 	)
 }
 
-func (ui *UI) UpdateProgress(done, total int) {
+func (ui *UI) UpdateProgress(remaining time.Duration, done, total int) {
 	ui.Progress.SetTitle(fmt.Sprintf(" Download Progress: %d%% ", (done*100)/total))
 	ui.Progress.Clear()
 	ui.Progress.AddText(
-		fmt.Sprintf(" %d/%d pieces downloaded\n\n", done, total),
+		fmt.Sprintf(" %d/%d pieces downloaded\n", done, total),
 		true, tview.AlignLeft, tcell.ColorWhite)
+	ui.Progress.AddText("", true, tview.AlignLeft, tcell.ColorWhite)
+	ui.Progress.AddText(
+		fmt.Sprintf(" Time remaining: %s", remaining.Round(time.Second).String()),
+		true, tview.AlignLeft, tcell.ColorWhite)
+	ui.Progress.AddText("", true, tview.AlignLeft, tcell.ColorWhite)
 	// Calculate the progress bar width.
 	_, _, _, height1 := ui.Progress.GetInnerRect()
 	ui.Progress.SetBorders(height1/4, 0, 0, 0, 2, 2)
