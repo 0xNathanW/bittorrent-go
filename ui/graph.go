@@ -34,7 +34,7 @@ func (g *Graph) Update(data float64) {
 	g.Object.SetText(asciigraph.Plot(g.Data,
 		asciigraph.Width(width),
 		asciigraph.Height(height),
-		asciigraph.Precision(2),
+		asciigraph.Precision(1),
 		asciigraph.Caption("Download Speed (MB/s)"),
 	))
 }

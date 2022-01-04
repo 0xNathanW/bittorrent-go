@@ -4,6 +4,7 @@ import (
 	"crypto/sha1"
 	"fmt"
 	"os"
+	"sort"
 	"time"
 
 	"github.com/0xNathanW/bittorrent-go/p2p"
@@ -49,7 +50,11 @@ func (c *Client) Run() {
 
 // operatePeer is a goroutine that handles communication with a single peer.
 // If an error occurs, the peer is disconnected and we return from function.
-func (c *Client) operatePeer(peer *p2p.Peer, workQ chan Piece, dataQ chan<- *PieceData) {
+func (c *Client) operatePeer(
+	peer *p2p.Peer,
+	workQ chan Piece,
+	dataQ chan<- *PieceData,
+) {
 	// Establish connection with peer.
 	err := peer.EstablishPeer(c.ID, c.Torrent.InfoHash)
 	if err != nil {
@@ -57,6 +62,10 @@ func (c *Client) operatePeer(peer *p2p.Peer, workQ chan Piece, dataQ chan<- *Pie
 		return
 	}
 	defer peer.Conn.Close()
+	if peer.IsChoking {
+		peer.Activity.Write([]byte("[red]Peer choking.\n\n"))
+		return
+	}
 	peer.Active = true
 	c.ActivePeers++
 	// Begin downloading pieces.
@@ -86,6 +95,7 @@ func (c *Client) operatePeer(peer *p2p.Peer, workQ chan Piece, dataQ chan<- *Pie
 		if hash != piece.Hash {
 			workQ <- piece
 			peer.Activity.Write([]byte(fmt.Sprintf("[red]Invalid piece hash, idx: %d[-]\n\n", piece.Index)))
+			peer.Downloaded -= len(data)
 			continue
 		}
 		// Send piece to dataQ.
@@ -99,7 +109,9 @@ func (c *Client) collectPieces(dataQ <-chan *PieceData) {
 	buf := make([]byte, c.Torrent.Size) // Output buffer.
 	var done int                        // Tracks number of pieces downloaded.
 	var mbDownloaded int                // Tracks number of megabytes downloaded.
+	start := time.Now()
 	sec := time.NewTicker(time.Second)
+	tenth := 0       // Tracks every 10 seconds.
 	var mbps float64 // Megabytes per second.
 
 	// Collect downloaded pieces.
@@ -119,15 +131,26 @@ func (c *Client) collectPieces(dataQ <-chan *PieceData) {
 			done++
 		// Every second update ui components.
 		case <-sec.C:
+			if tenth == 10 {
+				c.resetUploadPeers()
+				tenth = 0
+			} else {
+				tenth++
+			}
+			// Calculate estimated time remaining.
+			elapsed := time.Since(start).Seconds()
+			left := len(c.Torrent.Pieces) - done
+			remaining := time.Duration(float64(left) * (float64(done) / elapsed))
 			// Queue UI update and draw.
 			c.UI.App.QueueUpdateDraw(
 				func() {
 					c.UI.Graph.Update(mbps)
-					c.UI.UpdateProgress(done, len(c.Torrent.Pieces))
+					c.UI.UpdateProgress(remaining, done, len(c.Torrent.Pieces))
 					c.UI.UpdateListText(c.Peers)
 				},
 			)
 			mbps = 0 // Reset mbps.
+
 		}
 	}
 	// Write output buffer to file.
@@ -164,4 +187,29 @@ func (c *Client) writeToFile(buf []byte) error {
 		}
 	}
 	return nil
+}
+
+// Allows uploading to the top 4 peers that provide the most data.
+// At the moment this breaks peer pages.
+func (c *Client) resetUploadPeers() {
+	counts := [][]int{}
+	for i, peer := range c.Peers {
+		if peer.Active && !peer.IsChoking {
+			counts = append(counts, []int{i, peer.Downloaded})
+		}
+		peer.Downloaded = 0
+	}
+	if len(counts) < 4 {
+		for i := 0; i < len(counts); i++ {
+			c.Peers[counts[i][0]].Upload = true
+		}
+	} else {
+		sort.Slice(counts, func(i, j int) bool {
+			return counts[i][1] > counts[j][1]
+		})
+		for i := 0; i < 4; i++ {
+			c.Peers[counts[i][0]].Upload = true
+		}
+	}
+
 }
