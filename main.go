@@ -12,8 +12,7 @@ import (
 func main() {
 
 	// Torrent path is first argument.
-	//torrentPath := os.Args[1]
-	torrentPath := "budgie-remix-16.10-amd64.iso.torrent"
+	torrentPath := os.Args[1]
 	if err := verifyPath(torrentPath); err != nil {
 		log.Fatal(err)
 	}
