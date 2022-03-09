@@ -11,12 +11,9 @@ import (
 	"github.com/0xNathanW/bittorrent-go/ui"
 )
 
-const clientPort = 6881
-
 // Client is the highest level of the application.
 type Client struct {
 	ID          [20]byte // The client's unique ID.
-	Port        int      // The port the client is listening on.
 	Torrent     *torrent.Torrent
 	Peers       []*p2p.Peer
 	ActivePeers int
@@ -36,7 +33,6 @@ func NewClient(path string) (*Client, error) {
 
 	client := &Client{ // Client instance.
 		ID:      idGenerator(),
-		Port:    clientPort,
 		Torrent: torrent,
 	}
 
@@ -56,7 +52,6 @@ func NewClient(path string) (*Client, error) {
 	tracker.InitParams(
 		torrent.InfoHash,
 		client.ID,
-		client.Port,
 		torrent.Size,
 	)
 	client.Tracker = tracker

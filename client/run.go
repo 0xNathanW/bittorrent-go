@@ -33,14 +33,20 @@ func (c *Client) Run() {
 	}
 	// dataQ is a buffer of downloaded pieces.
 	dataQ := make(chan *PieceData)
+	defer close(dataQ)
+
+	// requestQ is a buffer of requests for pieces.
+	// requests consist of the idx, begin, and length of the piece.
+	requestQ := make(chan [3]int)
+	defer close(requestQ)
 
 	// Start workers, each in a goroutine.
 	for _, peer := range c.Peers {
-		go c.operatePeer(peer, workQ, dataQ)
+		go c.operatePeer(peer, workQ, dataQ, requestQ)
 	}
 
 	// Collect downloaded pieces.
-	go c.collectPieces(dataQ)
+	go c.collectPieces(dataQ, requestQ)
 
 	// Run tview event loop.
 	if err := c.UI.App.SetFocus(c.UI.PeerList).Run(); err != nil {
@@ -54,6 +60,7 @@ func (c *Client) operatePeer(
 	peer *p2p.Peer,
 	workQ chan Piece,
 	dataQ chan<- *PieceData,
+	requestQ chan<- [3]int,
 ) {
 	// Establish connection with peer.
 	err := peer.EstablishPeer(c.ID, c.Torrent.InfoHash)
@@ -76,8 +83,8 @@ func (c *Client) operatePeer(
 			workQ <- piece
 			continue
 		}
-		// Attempt to download piece.
-		data, err := peer.DownloadPiece(piece.Index, piece.Length)
+		// Attempt to download piece, also relay requests.
+		data, err := peer.DownloadPiece(piece.Index, piece.Length, requestQ)
 		if err != nil {
 			workQ <- piece
 			peer.Activity.Write([]byte("[red]" + err.Error() + "[-]\n\n"))
@@ -104,7 +111,7 @@ func (c *Client) operatePeer(
 	}
 }
 
-func (c *Client) collectPieces(dataQ <-chan *PieceData) {
+func (c *Client) collectPieces(dataQ <-chan *PieceData, requestQ <-chan [3]int) {
 
 	buf := make([]byte, c.Torrent.Size) // Output buffer.
 	var done int                        // Tracks number of pieces downloaded.
@@ -129,6 +136,7 @@ func (c *Client) collectPieces(dataQ <-chan *PieceData) {
 			// Add megabytes to mbps.
 			mbps += float64(n) / 1024 / 1024
 			done++
+
 		// Every second update ui components.
 		case <-sec.C:
 			if tenth == 10 {
@@ -155,6 +163,10 @@ func (c *Client) collectPieces(dataQ <-chan *PieceData) {
 	}
 	// Write output buffer to file.
 	c.writeToFile(buf)
+}
+
+func (c *Client) serveRequest() {
+
 }
 
 func (c *Client) writeToFile(buf []byte) error {

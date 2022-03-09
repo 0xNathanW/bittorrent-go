@@ -10,6 +10,8 @@ import (
 	"github.com/jackpal/bencode-go"
 )
 
+const clientPort = 6881
+
 type Tracker struct {
 	Client         *http.Client
 	Announce       *url.URL
@@ -48,14 +50,14 @@ func NewTracker(announce string, backupAnnounce []string) (*Tracker, error) {
 }
 
 // Add parameters to the announce URL.
-func (t *Tracker) InitParams(infoHash [20]byte, peerId [20]byte, port int, size int) {
+func (t *Tracker) InitParams(infoHash [20]byte, peerId [20]byte, size int) {
 	queryParams := url.Values{}
 	// 20 byte sha1 has of bencoded info from metainfo.
 	queryParams.Set("info_hash", string(infoHash[:]))
 	// String of length 20 which downloader uses as ID.
 	queryParams.Set("peer_id", string(peerId[:]))
 	// Port number peer is listening on.
-	queryParams.Set("port", strconv.Itoa(port))
+	queryParams.Set("port", strconv.Itoa(clientPort))
 	// Total amount uploaded so far, encoded in base 10 ascii.
 	queryParams.Set("uploaded", "0")
 	// Total amount downloaded so far, encoded in base 10 ascii.

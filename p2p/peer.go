@@ -234,7 +234,7 @@ func (p *Peer) buildBitfield() error {
 	return nil
 }
 
-func (p *Peer) DownloadPiece(idx, length int) ([]byte, error) {
+func (p *Peer) DownloadPiece(idx, length int, requestQ chan<- [3]int) ([]byte, error) {
 	p.Conn.SetDeadline(time.Now().Add(30 * time.Second))
 	/* Pieces are too long to request in one go.
 	 * We will request a piece in chunks of 16384 bytes (16Kb) called blocks.
@@ -269,6 +269,15 @@ func (p *Peer) DownloadPiece(idx, length int) ([]byte, error) {
 			msg, err := p.Read()
 			if err != nil {
 				return nil, fmt.Errorf("failed to read response: %v", err)
+			}
+
+			// Add requests to queue.
+			if msg.ID == 6 {
+				idx := int(binary.BigEndian.Uint32(msg.Payload[0:4]))
+				off := int(binary.BigEndian.Uint32(msg.Payload[4:8]))
+				length := int(binary.BigEndian.Uint32(msg.Payload[8:12]))
+				requestQ <- [3]int{idx, off, length}
+				continue
 			}
 
 			payload, err := p.HandleMsg(msg)
