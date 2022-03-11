@@ -27,7 +27,7 @@ type UI struct {
 	Graph       *Graph
 	Progress    *tview.Frame
 	ProgressBar *tview.TextView
-	PeerList    *tview.List
+	PeerTable   *tview.Table
 	PeerPages   *tview.Pages
 }
 
@@ -45,7 +45,7 @@ func NewUI(t *torrent.Torrent, peers []*p2p.Peer) (*UI, error) {
 
 		Graph: newGraph(),
 
-		PeerList: newPeerList(peers),
+		PeerTable: newPeerTable(peers),
 
 		PeerPages: newPeerPages(peers),
 
@@ -59,15 +59,6 @@ func NewUI(t *torrent.Torrent, peers []*p2p.Peer) (*UI, error) {
 	ui.Progress = tview.NewFrame(ui.ProgressBar)
 	ui.Progress.SetBorder(true)
 	ui.ProgressBar.SetBorder(true)
-
-	// Set the peer info page to change on manouvering list.
-	ui.PeerList.SetChangedFunc(
-		func(index int, mainText string, secondaryText string, shortcut rune) {
-			ui.PeerPages.SwitchToPage(mainText)
-		},
-	)
-	ui.PeerList.Box.SetBorderPadding(0, 0, 2, 0)
-	ui.PeerList.SetCurrentItem(0)
 
 	ui.drawLayout(t)
 	ui.App.SetRoot(ui.Layout, true) // Set grid as the root primitive.
@@ -111,7 +102,7 @@ func (ui *UI) drawLayout(t *torrent.Torrent) {
 		0, 1, 1, 1,
 		0, 0, false,
 	).AddItem(
-		ui.PeerList,
+		ui.PeerTable,
 		1, 0, 1, 1,
 		0, 0, false,
 	).AddItem(
@@ -130,7 +121,9 @@ func (ui *UI) drawLayout(t *torrent.Torrent) {
 }
 
 func (ui *UI) UpdateProgress(remaining time.Duration, done, total int) {
+
 	ui.Progress.SetTitle(fmt.Sprintf(" Download Progress: %d%% ", (done*100)/total))
+
 	ui.Progress.Clear()
 	ui.Progress.AddText(
 		fmt.Sprintf(" %d/%d pieces downloaded\n", done, total),
@@ -155,40 +148,81 @@ func (ui *UI) UpdateProgress(remaining time.Duration, done, total int) {
 	ui.ProgressBar.SetText(progress)
 }
 
-func (ui *UI) UpdateListText(peers []*p2p.Peer) {
-	for i, peer := range peers {
-		ui.PeerList.SetItemText(i, formatPeerString(peer.IP.String(), i), formatActive(peer.Active))
-	}
-}
+func newPeerTable(peers []*p2p.Peer) *tview.Table {
 
-func newPeerList(peers []*p2p.Peer) *tview.List {
-	peerList := tview.NewList()
-	peerList.SetBorder(true).SetTitle(" Peers ")
-	for i, peer := range peers {
-		peerList.AddItem(
-			formatPeerString(peer.IP.String(), i), formatActive(peer.Active), '>', nil,
-		)
+	table := tview.NewTable().
+		SetSelectable(true, false).
+		SetEvaluateAllRows(true)
+
+	columnNames := []string{
+		"IP",
+		"Active",
+		"Download Speed (MB/s)",
+		"Upload Speed (MB/s)",
+		"Downloading",
+		"Choked",
+		"Choking",
 	}
-	return peerList
+
+	for i := range columnNames {
+		table.SetCell(0, i, &tview.TableCell{
+			Text:          columnNames[i],
+			Align:         tview.AlignCenter,
+			Color:         tcell.ColorBlue,
+			NotSelectable: true,
+		})
+	}
+
+	for r, peer := range peers {
+		for c, name := range columnNames {
+
+			var text string
+			switch name {
+			case "IP":
+				text = peer.IP.String()
+			case "Active":
+				if peer.Active {
+					text = "[green]Yes[-]"
+				} else {
+					text = "[red]No[-]"
+				}
+			case "Download Speed (MB/s)":
+				text = fmt.Sprintf("%.2f", peer.DownloadRate)
+			case "Upload Speed (MB/s)":
+				text = fmt.Sprintf("%.2f", peer.UploadRate)
+			case "Downloading":
+				text = "N/A"
+			case "Choked":
+				if peer.Choked {
+					text = "[red]Yes[-]"
+				} else {
+					text = "[green]No[-]"
+				}
+			case "Choking":
+				if peer.IsChoking {
+					text = "[red]Yes[-]"
+				} else {
+					text = "[green]No[-]"
+				}
+			}
+
+			table.SetCell(r+1, c, &tview.TableCell{
+				Reference: peer,
+				Text:      text,
+				Align:     tview.AlignCenter,
+			})
+
+		}
+	}
+	return table
 }
 
 func newPeerPages(peers []*p2p.Peer) *tview.Pages {
 	peerPages := tview.NewPages()
-	for i, peer := range peers {
-		peerPages.AddPage(formatPeerString(peer.IP.String(), i), peer.Page, true, false)
+	for _, peer := range peers {
+		peerPages.AddPage(
+			peer.IP.String(), peer.Activity, true, false)
 	}
 	peerPages.SwitchToPage(peers[0].IP.String())
 	return peerPages
-}
-
-// Util functions.
-func formatActive(active bool) string {
-	if active {
-		return "[green]Active"
-	}
-	return "[red]Inactive"
-}
-
-func formatPeerString(IP string, num int) string {
-	return fmt.Sprintf("Peer: %d - %s", num, IP)
 }
