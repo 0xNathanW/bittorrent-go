@@ -71,7 +71,13 @@ func (c *Client) collectPieces(dataQ <-chan *torrent.PieceData) {
 			done++
 
 		case <-sec.C:
-			// use kbps.
+
+			c.UI.App.QueueUpdateDraw(
+				func() {
+					c.UI.Graph.Update(kbps)
+				},
+			)
+
 			kbps = 0
 		}
 	}

@@ -19,9 +19,10 @@ type Peer struct {
 	Conn     net.Conn
 	BitField msg.Bitfield
 	Active   bool
+	strikes  int
 
-	DownloadRate int
-	UploadRate   int
+	DownloadRate float64
+	UploadRate   float64
 
 	Downloaded  int
 	Uploaded    int
@@ -57,10 +58,14 @@ func ParsePeers(peerString string, bfLength int) []*Peer {
 			IsChoking:    true,
 			IsInterested: false,
 
+			DownloadRate: 0,
+			UploadRate:   0,
+
 			Activity: tview.NewTextView().
 				SetScrollable(true).
 				ScrollToEnd().
-				SetDynamicColors(true),
+				SetDynamicColors(true).
+				SetMaxLines(20),
 		}
 
 		peer.Activity.
@@ -84,7 +89,7 @@ func (p *Peer) connect() error {
 	}
 
 	p.Conn = conn
-	p.Activity.Write([]byte("[green]Successfully connected to peer.[-]\n\n"))
+	p.Activity.Write([]byte("[green]TCP connection successful.[-]\n\n"))
 	return nil
 }
 
@@ -117,7 +122,7 @@ func (p *Peer) read() (*msg.Message, error) {
 
 	length := binary.BigEndian.Uint32(message.Length)
 	if length == 0 { // Keep-alive message.
-		p.Activity.Write([]byte("<== Keep-Alive\n\n"))
+		p.Activity.Write([]byte("<== keep-Alive\n\n"))
 		return nil, nil
 	}
 
@@ -206,7 +211,7 @@ func (p *Peer) exchangeHandshake(ID, infoHash [20]byte) error {
 		return err
 	}
 
-	p.Activity.Write([]byte("[green]Handshake successful.[-]\n\n"))
+	p.Activity.Write([]byte("[green]handshake successful.[-]\n\n"))
 	p.PeerID = peerID
 	return nil
 }
@@ -238,6 +243,8 @@ func (p *Peer) establishPeer(ID, infoHash [20]byte) error {
 	// Sometimes peers will annoyingly send have messages after bitfields.
 	// However we should be expecting an unchoke message.
 	p.handleOther(message)
+
+	p.Activity.Write([]byte("[green]peer established.[-]\n\n"))
 	return nil
 }
 
@@ -251,6 +258,14 @@ func (p *Peer) buildBitfield() error {
 
 	if message.ID == 4 || message.ID == 5 {
 		p.handleOther(message)
+
+	} else if message.ID == 1 {
+		p.handleOther(message)
+
+		if err := p.buildBitfield(); err != nil {
+			return err
+		}
+
 	} else {
 		p.handleOther(message)
 		return fmt.Errorf("expected user piece info, got: %v", msg.MsgIDmap[message.ID])
@@ -266,7 +281,7 @@ func (p *Peer) attemptReconnect(ID, infoHash [20]byte) error {
 		if err := p.establishPeer(ID, infoHash); err == nil {
 			return nil
 		}
-		p.Activity.Write([]byte(fmt.Sprintf("[red]reconnection attempt %v failed.[-]\n\n", i+1)))
+		p.Activity.Write([]byte(fmt.Sprintf("[red]reconnection attempt %v failed[-]\n\n", i+1)))
 		time.Sleep(time.Second * 30)
 	}
 

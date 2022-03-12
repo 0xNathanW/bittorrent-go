@@ -4,16 +4,11 @@ import (
 	"context"
 	"crypto/sha1"
 	"encoding/binary"
-	"errors"
 	"fmt"
 	"time"
 
 	msg "github.com/0xNathanW/bittorrent-go/p2p/message"
 	"github.com/0xNathanW/bittorrent-go/torrent"
-)
-
-var (
-	choked = errors.New("peer is choked")
 )
 
 func (p *Peer) Run(
@@ -40,6 +35,7 @@ func (p *Peer) Run(
 	defer func() {
 		p.Conn.Close()
 		p.Active = false
+		p.Activity.Write([]byte("[red]disconnected from peer[-]\n\n"))
 	}()
 
 	// Go-routine measures download/upload speed.
@@ -55,6 +51,11 @@ func (p *Peer) Run(
 
 		case piece := <-workQ:
 
+			if p.strikes > 5 {
+				p.Activity.Write([]byte("[red]too many strikes, disconnecting...[-]\n\n"))
+				return
+			}
+
 			// If peer doesnt have piece, put it back in the queue.
 			if !p.BitField.HasPiece(piece.Index) {
 				workQ <- piece
@@ -64,6 +65,7 @@ func (p *Peer) Run(
 			if err := p.downloadPiece(piece, dataQ, requestQ); err != nil {
 				workQ <- piece
 				p.Activity.Write([]byte("[red]" + err.Error() + "[-]\n\n"))
+				p.strikes++
 				continue
 			}
 		}
@@ -177,7 +179,7 @@ func (p *Peer) downloadPiece(
 
 	// send piece to dataQ.
 	dataQ <- &torrent.PieceData{Index: piece.Index, Data: data}
-	p.Activity.Write([]byte(fmt.Sprintf("[blue]Downloaded piece %d.[-]\n\n", piece.Index)))
+	p.Activity.Write([]byte(fmt.Sprintf("[blue]downloaded piece %d.[-]\n\n", piece.Index)))
 
 	return nil
 }
@@ -191,8 +193,8 @@ func (p *Peer) measureSpeeds(ctx context.Context) {
 		select {
 
 		case <-ticker.C:
-			p.DownloadRate = p.Downloaded - lastDownloaded
-			p.UploadRate = p.Uploaded - lastUploaded
+			p.DownloadRate = float64(p.Downloaded-lastDownloaded) / float64(1024)
+			p.UploadRate = float64(p.Uploaded-lastUploaded) / float64(1024)
 
 			lastDownloaded = p.Downloaded
 			lastUploaded = p.Uploaded

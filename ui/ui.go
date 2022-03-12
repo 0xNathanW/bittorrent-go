@@ -54,7 +54,16 @@ func NewUI(t *torrent.Torrent, peers []*p2p.Peer) (*UI, error) {
 			SetTextColor(tcell.ColorBlue),
 	}
 
-	ui.Graph.Object.SetBorder(true).SetTitle(" Download Speed (MB/s) ")
+	ui.Graph.Object.SetBorder(true).
+		SetTitle(" Download Speed (MB/s) ").
+		SetBorderPadding(0, 0, 2, 2)
+
+	ui.PeerTable.SetBorder(true).SetTitle(" Peers ")
+	ui.PeerTable.SetSelectionChangedFunc(
+		func(row, column int) {
+			ui.PeerPages.SwitchToPage(ui.PeerTable.GetCell(row, 0).Text)
+		},
+	)
 
 	ui.Progress = tview.NewFrame(ui.ProgressBar)
 	ui.Progress.SetBorder(true)
@@ -79,6 +88,7 @@ func (ui *UI) drawLayout(t *torrent.Torrent) {
 		strings.Repeat("\n", verticalPadding) + bannerTxt,
 	)
 	banner.Box.SetBorder(false)
+
 	// A element to display basic information about the torrent.
 	infoText := fmt.Sprintf(
 		"\n\tName: %s\n\tSize: %s\n\tInfo Hash: %s",
@@ -157,8 +167,8 @@ func newPeerTable(peers []*p2p.Peer) *tview.Table {
 	columnNames := []string{
 		"IP",
 		"Active",
-		"Download Speed (MB/s)",
-		"Upload Speed (MB/s)",
+		"Download (MB/s)",
+		"Upload (MB/s)",
 		"Downloading",
 		"Choked",
 		"Choking",
@@ -167,8 +177,8 @@ func newPeerTable(peers []*p2p.Peer) *tview.Table {
 	for i := range columnNames {
 		table.SetCell(0, i, &tview.TableCell{
 			Text:          columnNames[i],
-			Align:         tview.AlignCenter,
-			Color:         tcell.ColorBlue,
+			Align:         tview.AlignLeft,
+			Color:         tcell.ColorAquaMarine,
 			NotSelectable: true,
 		})
 	}
@@ -177,44 +187,51 @@ func newPeerTable(peers []*p2p.Peer) *tview.Table {
 		for c, name := range columnNames {
 
 			var text string
+			colour := tcell.ColorWhite
+
 			switch name {
 			case "IP":
 				text = peer.IP.String()
+				colour = tcell.ColorYellow
+
 			case "Active":
 				if peer.Active {
-					text = "[green]Yes[-]"
+					text = "Yes"
+					colour = tcell.ColorGreen
 				} else {
-					text = "[red]No[-]"
+					text = "No"
+					colour = tcell.ColorRed
 				}
+
 			case "Download Speed (MB/s)":
 				text = fmt.Sprintf("%.2f", peer.DownloadRate)
+
 			case "Upload Speed (MB/s)":
 				text = fmt.Sprintf("%.2f", peer.UploadRate)
+
 			case "Downloading":
-				text = "N/A"
+				text = boolString(peer.Downloading)
+
 			case "Choked":
-				if peer.Choked {
-					text = "[red]Yes[-]"
-				} else {
-					text = "[green]No[-]"
-				}
+				text = boolString(peer.Choked)
+
 			case "Choking":
-				if peer.IsChoking {
-					text = "[red]Yes[-]"
-				} else {
-					text = "[green]No[-]"
-				}
+				text = boolString(peer.IsChoking)
 			}
 
 			table.SetCell(r+1, c, &tview.TableCell{
 				Reference: peer,
 				Text:      text,
-				Align:     tview.AlignCenter,
+				Align:     tview.AlignLeft,
+				Color:     colour,
 			})
 
 		}
 	}
-	return table
+	return table.SetFixed(1, 0).
+		SetSelectedStyle(tcell.StyleDefault.
+			Foreground(tcell.ColorBlack).
+			Background(tcell.ColorWhite))
 }
 
 func newPeerPages(peers []*p2p.Peer) *tview.Pages {
@@ -225,4 +242,60 @@ func newPeerPages(peers []*p2p.Peer) *tview.Pages {
 	}
 	peerPages.SwitchToPage(peers[0].IP.String())
 	return peerPages
+}
+
+func (ui *UI) UpdateTable(peers []*p2p.Peer) {
+
+	columnNames := []string{
+		"IP",
+		"Active",
+		"Download (MB/s)",
+		"Upload (MB/s)",
+		"Downloading",
+		"Choked",
+		"Choking",
+	}
+
+	for r, peer := range peers {
+		for c, name := range columnNames {
+
+			cell := ui.PeerTable.GetCell(r+1, c)
+			switch name {
+
+			case "Active":
+				cell.SetText(boolString(peer.Active))
+				if peer.Active {
+					cell.SetTextColor(tcell.ColorGreen)
+				} else {
+					cell.SetTextColor(tcell.ColorRed)
+				}
+
+			case "Download Speed (MB/s)":
+				cell.SetText(fmt.Sprintf("%4.2f", peer.DownloadRate))
+
+			case "Upload Speed (MB/s)":
+				cell.SetText(fmt.Sprintf("%4.2f", peer.UploadRate))
+
+			case "Downloading":
+				cell.SetText(boolString(peer.Downloading))
+
+			case "Choked":
+				cell.SetText(boolString(peer.Choked))
+
+			case "Choking":
+				cell.SetText(boolString(peer.IsChoking))
+
+			default:
+				continue
+			}
+		}
+	}
+}
+
+func boolString(b bool) string {
+	if b {
+		return "Yes"
+	} else {
+		return "No"
+	}
 }
