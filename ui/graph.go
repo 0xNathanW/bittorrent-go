@@ -21,7 +21,13 @@ func newGraph() *Graph {
 
 		Data: make([]float64, 100),
 	}
-	graph.Object.SetBorderPadding(2, 2, 2, 2)
+
+	graph.Object.
+		SetBorderPadding(2, 2, 2, 2).
+		SetBorder(true).
+		SetTitle(" Download Speed (MB/s) ").
+		SetBorderPadding(0, 0, 2, 2)
+
 	return graph
 }
 

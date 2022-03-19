@@ -47,7 +47,7 @@ func (c *Client) collectPieces(dataQ <-chan *torrent.PieceData) {
 
 	var done int            // Tracks number of pieces downloaded.
 	var bytesDownloaded int // Tracks number of megabytes downloaded.
-	var kbps float64        // Kilobytes per second.
+	var mbps float64        // Kilobytes per second.
 
 	//start := time.Now()
 	sec := time.NewTicker(time.Second)
@@ -67,18 +67,22 @@ func (c *Client) collectPieces(dataQ <-chan *torrent.PieceData) {
 
 			n := copy(buf[start:end], piece.Data)
 			bytesDownloaded += n
-			kbps += float64(n) / 1024
+			mbps += float64(n) / 1024 / 1024 // Convert to megabytes.
 			done++
 
 		case <-sec.C:
 
 			c.UI.App.QueueUpdateDraw(
 				func() {
-					c.UI.Graph.Update(kbps)
+
+					c.UI.Graph.Update(mbps)
+					c.UI.UpdateTable(c.Peers)
+					c.UI.UpdateProgress(done)
+
 				},
 			)
 
-			kbps = 0
+			mbps = 0
 		}
 	}
 	// Write output buffer to file.
