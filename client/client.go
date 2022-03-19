@@ -13,13 +13,12 @@ import (
 
 // Client is the highest level of the application.
 type Client struct {
-	ID          [20]byte // The client's unique ID.
-	Torrent     *torrent.Torrent
-	Peers       []*p2p.Peer
-	ActivePeers int
-	Tracker     *tracker.Tracker
-	BitField    message.Bitfield
-	UI          *ui.UI
+	ID       [20]byte // The client's unique ID.
+	Torrent  *torrent.Torrent
+	Peers    []*p2p.Peer
+	Tracker  *tracker.Tracker
+	BitField message.Bitfield
+	UI       *ui.UI
 }
 
 // Create a new client instance.
