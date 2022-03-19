@@ -34,9 +34,12 @@ func newGraph() *Graph {
 // Takes a new value and updates graph,
 // keeping it the same width.
 func (g *Graph) Update(data float64) {
+
 	g.Data = append(g.Data, data)
 	g.Data = g.Data[1:]
+
 	_, _, width, height := g.Object.GetInnerRect()
+
 	g.Object.SetText(asciigraph.Plot(g.Data,
 		asciigraph.Width(width),
 		asciigraph.Height(height),

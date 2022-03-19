@@ -15,7 +15,7 @@ func (c *Client) Run() {
 	workQ := c.Torrent.NewWorkQueue()
 	defer close(workQ)
 
-	// dataQ is a buffer of downloaded pieces.
+	// dataQ is a recieves piece data from workers.
 	dataQ := make(chan *torrent.PieceData)
 	defer close(dataQ)
 
@@ -48,8 +48,6 @@ func (c *Client) collectPieces(dataQ <-chan *torrent.PieceData) {
 	var done int            // Tracks number of pieces downloaded.
 	var bytesDownloaded int // Tracks number of megabytes downloaded.
 	var mbps float64        // Kilobytes per second.
-
-	//start := time.Now()
 	sec := time.NewTicker(time.Second)
 
 	// Collect downloaded pieces.
@@ -81,12 +79,13 @@ func (c *Client) collectPieces(dataQ <-chan *torrent.PieceData) {
 
 				},
 			)
-
 			mbps = 0
 		}
 	}
 	// Write output buffer to file.
 	c.writeToFile(buf)
+
+	// Logic for transition to seeding.
 }
 
 func (c *Client) writeToFile(buf []byte) error {
