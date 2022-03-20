@@ -3,8 +3,10 @@ package client
 import (
 	"context"
 	"os"
+	"sort"
 	"time"
 
+	"github.com/0xNathanW/bittorrent-go/p2p"
 	"github.com/0xNathanW/bittorrent-go/torrent"
 )
 
@@ -33,7 +35,7 @@ func (c *Client) Run() {
 	}
 
 	// Collect downloaded pieces.
-	go c.collectPieces(dataQ)
+	go c.collectPieces(dataQ, requestQ)
 
 	// Run tview event loop.
 	if err := c.UI.App.SetFocus(c.UI.PeerTable).Run(); err != nil {
@@ -41,7 +43,7 @@ func (c *Client) Run() {
 	}
 }
 
-func (c *Client) collectPieces(dataQ <-chan *torrent.PieceData) {
+func (c *Client) collectPieces(dataQ <-chan *torrent.PieceData, requestQ <-chan [3]int) {
 
 	buf := make([]byte, c.Torrent.Size) // Output buffer.
 
@@ -49,6 +51,7 @@ func (c *Client) collectPieces(dataQ <-chan *torrent.PieceData) {
 	var bytesDownloaded int // Tracks number of megabytes downloaded.
 	var mbps float64        // Kilobytes per second.
 	sec := time.NewTicker(time.Second)
+	sec10 := time.NewTicker(time.Second * 10)
 
 	// Collect downloaded pieces.
 	for done < len(c.Torrent.Pieces) {
@@ -68,6 +71,8 @@ func (c *Client) collectPieces(dataQ <-chan *torrent.PieceData) {
 			mbps += float64(n) / 1024 / 1024 // Convert to megabytes.
 			done++
 
+		case request := <-requestQ:
+
 		case <-sec.C:
 
 			c.UI.App.QueueUpdateDraw(
@@ -80,6 +85,9 @@ func (c *Client) collectPieces(dataQ <-chan *torrent.PieceData) {
 				},
 			)
 			mbps = 0
+
+		case <-sec10.C:
+			c.chokingAlgo()
 		}
 	}
 	// Write output buffer to file.
@@ -126,29 +134,38 @@ func (c *Client) writeToFile(buf []byte) error {
 }
 
 // Allows uploading to the top 4 peers that provide the most data.
-// At the moment this breaks peer pages.
+func (c *Client) chokingAlgo() {
 
-// TODO:  REIMPLEMENT
+	last := make(map[*p2p.Peer][2]int)
+	ticker := time.NewTicker(time.Second * 10)
 
-// func (c *Client) resetUploadPeers() {
-// 	counts := [][]int{}
-// 	for i, peer := range c.Peers {
-// 		if peer.Active && !peer.IsChoking {
-// 			counts = append(counts, []int{i, peer.Downloaded})
-// 		}
-// 		peer.Downloaded = 0
-// 	}
-// 	if len(counts) < 4 {
-// 		for i := 0; i < len(counts); i++ {
-// 			c.Peers[counts[i][0]].Upload = true
-// 		}
-// 	} else {
-// 		sort.Slice(counts, func(i, j int) bool {
-// 			return counts[i][1] > counts[j][1]
-// 		})
-// 		for i := 0; i < 4; i++ {
-// 			c.Peers[counts[i][0]].Upload = true
-// 		}
-// 	}
+	for range ticker.C {
 
-// }
+		for _, peer := range c.Peers {
+			if peer.Active {
+				peer.DownloadRate = peer.Downloaded - last[peer][0]
+				peer.UploadRate = peer.Uploaded - last[peer][1]
+			} else {
+				peer.DownloadRate = 0
+				peer.UploadRate = 0
+			}
+		}
+
+		uploadSort := c.Peers
+		sort.Slice(uploadSort, func(i, j int) bool {
+			return uploadSort[i].DownloadRate > uploadSort[j].DownloadRate
+		})
+
+		for i := 0; i < 4; i++ {
+			for _, peer := range c.Peers {
+
+				if peer.IP.String() == uploadSort[i].IP.String() {
+					peer.Downloading = true
+					peer.Activity.Write([]byte("[green]serving requests from peer.[-]"))
+				} else {
+					peer.Downloading = false
+				}
+			}
+		}
+	}
+}

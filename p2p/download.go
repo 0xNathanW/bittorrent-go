@@ -38,11 +38,6 @@ func (p *Peer) Run(
 		p.Activity.Write([]byte("[red]disconnected from peer[-]\n\n"))
 	}()
 
-	// Go-routine measures download/upload speed.
-	measureCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	go p.measureSpeeds(measureCtx)
-
 	for {
 		select {
 
@@ -54,6 +49,10 @@ func (p *Peer) Run(
 			if p.strikes > 5 {
 				p.Activity.Write([]byte("[red]too many strikes, disconnecting...[-]\n\n"))
 				return
+			}
+
+			if p.Downloading && p.Choked {
+				p.send(msg.Unchoke())
 			}
 
 			// If peer doesnt have piece, put it back in the queue.
@@ -155,13 +154,10 @@ func (p *Peer) downloadPiece(
 
 			// Copy data to data buffer.
 			n := copy(data[downloaded:], msgData)
-			p.Downloaded += n
 			downloaded += n
 
 		} else {
-
 			p.handleOther(m)
-
 		}
 	}
 
@@ -173,35 +169,13 @@ func (p *Peer) downloadPiece(
 	var pieceHash [20]byte
 	copy(pieceHash[:], hash)
 	if pieceHash != piece.Hash {
-		p.Downloaded -= piece.Length
 		return fmt.Errorf("piece hash mismatch")
 	}
 
 	// send piece to dataQ.
 	dataQ <- &torrent.PieceData{Index: piece.Index, Data: data}
 	p.Activity.Write([]byte(fmt.Sprintf("[blue]downloaded piece %d.[-]\n\n", piece.Index)))
+	p.Downloaded += piece.Length
 
 	return nil
-}
-
-func (p *Peer) measureSpeeds(ctx context.Context) {
-
-	ticker := time.NewTicker(time.Second)
-	var lastDownloaded, lastUploaded int
-
-	for {
-		select {
-
-		case <-ticker.C:
-			p.DownloadRate = float64(p.Downloaded-lastDownloaded) / float64(1024)
-			p.UploadRate = float64(p.Uploaded-lastUploaded) / float64(1024)
-
-			lastDownloaded = p.Downloaded
-			lastUploaded = p.Uploaded
-
-		case <-ctx.Done():
-			ticker.Stop()
-			return
-		}
-	}
 }

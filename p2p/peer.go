@@ -21,8 +21,8 @@ type Peer struct {
 	Active   bool
 	strikes  int
 
-	DownloadRate float64
-	UploadRate   float64
+	DownloadRate int
+	UploadRate   int
 
 	Downloaded  int
 	Uploaded    int
@@ -235,6 +235,8 @@ func (p *Peer) establishPeer(ID, infoHash [20]byte) error {
 	}
 	// send intent to download from peer.
 	p.send(msg.Interested())
+
+	// TODO: Maybe add condition for if unchoke already received.
 	// Wait for unchoke from peer.
 	message, err := p.read()
 	if err != nil {
@@ -277,7 +279,7 @@ func (p *Peer) buildBitfield() error {
 func (p *Peer) attemptReconnect(ID, infoHash [20]byte) error {
 
 	time.Sleep(time.Second * 30)
-	for i := 0; i < 3; i++ {
+	for i := 0; i < 2; i++ {
 		if err := p.establishPeer(ID, infoHash); err == nil {
 			return nil
 		}

@@ -247,10 +247,10 @@ func (ui *UI) UpdateTable(peers []*p2p.Peer) {
 				}
 
 			case "Down (MB/s)":
-				cell.SetText(fmt.Sprintf("%4.2f", peer.DownloadRate))
+				cell.SetText(fmt.Sprintf("%4.2f", float64(peer.DownloadRate)/1024))
 
 			case "Up (MB/s)":
-				cell.SetText(fmt.Sprintf("%4.2f", peer.UploadRate))
+				cell.SetText(fmt.Sprintf("%4.2f", float64(peer.UploadRate)/1024))
 
 			case "Downloading":
 				cell.SetText(boolString(peer.Downloading))
