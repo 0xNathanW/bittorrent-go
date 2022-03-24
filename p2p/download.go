@@ -44,14 +44,17 @@ func (p *Peer) Run(
 		case <-ctx.Done():
 			return
 
+		case msg := <-p.MsgBuffer:
+			p.send(msg)
+
 		case piece := <-workQ:
 
-			if p.strikes > 5 {
+			if p.strikes > 5 { // 5 strikes and peer gets disconnected.
 				p.Activity.Write([]byte("[red]too many strikes, disconnecting...[-]\n\n"))
 				return
 			}
 
-			if p.Downloading && p.Choked {
+			if p.Downloading && p.Choked { // If a top peer, unchoke them.
 				p.send(msg.Unchoke())
 			}
 
@@ -64,7 +67,7 @@ func (p *Peer) Run(
 			if err := p.downloadPiece(piece, dataQ, requestQ); err != nil {
 				workQ <- piece
 				p.Activity.Write([]byte("[red]" + err.Error() + "[-]\n\n"))
-				p.strikes++
+				p.strikes++ // Add a strike if download fails.
 				continue
 			}
 		}
@@ -110,16 +113,21 @@ func (p *Peer) downloadPiece(
 
 		m, err := p.read()
 		if err != nil {
-			return fmt.Errorf("failed to read response: %v", err)
+			return fmt.Errorf("failed to read from connection: %v", err)
 		}
 
-		// Add requests to queue.
+		// Add requests to queue if good peer.
 		if m.ID == 6 {
-			idx := int(binary.BigEndian.Uint32(m.Payload[0:4]))
-			off := int(binary.BigEndian.Uint32(m.Payload[4:8]))
-			length := int(binary.BigEndian.Uint32(m.Payload[8:12]))
-			requestQ <- [3]int{idx, off, length}
-			continue
+			if p.Downloading {
+				idx := int(binary.BigEndian.Uint32(m.Payload[0:4]))
+				off := int(binary.BigEndian.Uint32(m.Payload[4:8]))
+				length := int(binary.BigEndian.Uint32(m.Payload[8:12]))
+				requestQ <- [3]int{idx, off, length}
+				continue
+			} else {
+				p.send(msg.Choke())
+				continue
+			}
 		}
 
 		if m.ID == 7 && m.Payload != nil {

@@ -3,7 +3,6 @@ package client
 import (
 	"context"
 	"os"
-	"sort"
 	"time"
 
 	"github.com/0xNathanW/bittorrent-go/p2p"
@@ -71,7 +70,7 @@ func (c *Client) collectPieces(dataQ <-chan *torrent.PieceData, requestQ <-chan 
 			mbps += float64(n) / 1024 / 1024 // Convert to megabytes.
 			done++
 
-		case request := <-requestQ:
+		// case request := <-requestQ:
 
 		case <-sec.C:
 
@@ -87,7 +86,7 @@ func (c *Client) collectPieces(dataQ <-chan *torrent.PieceData, requestQ <-chan 
 			mbps = 0
 
 		case <-sec10.C:
-			c.chokingAlgo()
+			go c.chokingAlgo()
 		}
 	}
 	// Write output buffer to file.
@@ -145,27 +144,28 @@ func (c *Client) chokingAlgo() {
 			if peer.Active {
 				peer.DownloadRate = peer.Downloaded - last[peer][0]
 				peer.UploadRate = peer.Uploaded - last[peer][1]
+				last[peer] = [2]int{peer.Downloaded, peer.Uploaded}
 			} else {
 				peer.DownloadRate = 0
 				peer.UploadRate = 0
 			}
 		}
 
-		uploadSort := c.Peers
-		sort.Slice(uploadSort, func(i, j int) bool {
-			return uploadSort[i].DownloadRate > uploadSort[j].DownloadRate
-		})
+		// uploadSort := c.Peers
+		// sort.Slice(uploadSort, func(i, j int) bool {
+		// 	return uploadSort[i].DownloadRate > uploadSort[j].DownloadRate
+		// })
 
-		for i := 0; i < 4; i++ {
-			for _, peer := range c.Peers {
+		// for i := 0; i < 4; i++ {
+		// 	for _, peer := range c.Peers {
 
-				if peer.IP.String() == uploadSort[i].IP.String() {
-					peer.Downloading = true
-					peer.Activity.Write([]byte("[green]serving requests from peer.[-]"))
-				} else {
-					peer.Downloading = false
-				}
-			}
-		}
+		// 		if peer.IP.String() == uploadSort[i].IP.String() {
+		// 			peer.Downloading = true
+		// 			peer.Activity.Write([]byte("[green]serving requests from peer.[-]"))
+		// 		} else {
+		// 			peer.Downloading = false
+		// 		}
+		// 	}
+		// }
 	}
 }

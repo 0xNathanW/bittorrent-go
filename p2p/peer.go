@@ -20,6 +20,8 @@ type Peer struct {
 	BitField msg.Bitfield
 	Active   bool
 	strikes  int
+	// Buffer for messages outside peer goroutine
+	MsgBuffer chan []byte
 
 	DownloadRate int
 	UploadRate   int
@@ -48,9 +50,10 @@ func ParsePeers(peerString string, bfLength int) []*Peer {
 		port := []byte(peerString[i*6+4 : i*6+6]) // Next 2 bytes are port.
 
 		peer := &Peer{
-			IP:       net.IP{ip[0], ip[1], ip[2], ip[3]},
-			Port:     strconv.Itoa(int(binary.BigEndian.Uint16(port))),
-			BitField: make(msg.Bitfield, bfLength),
+			IP:        net.IP{ip[0], ip[1], ip[2], ip[3]},
+			Port:      strconv.Itoa(int(binary.BigEndian.Uint16(port))),
+			BitField:  make(msg.Bitfield, bfLength),
+			MsgBuffer: make(chan []byte, 5),
 
 			Active:       false,
 			Choked:       true,

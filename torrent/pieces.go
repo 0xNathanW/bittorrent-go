@@ -16,6 +16,7 @@ type PieceData struct {
 func (t *Torrent) NewWorkQueue() chan Piece {
 
 	workQ := make(chan Piece, len(t.Pieces))
+	// TODO: randomise order of pieces.
 	for idx, hash := range t.Pieces {
 		workQ <- Piece{idx, t.PieceSize(idx), hash}
 	}
