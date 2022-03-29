@@ -95,6 +95,20 @@ func Request(idx, begin, length int) []byte {
 	return msg.SerialiseMsg()
 }
 
+func Block(idx int, offset int, block []byte) []byte {
+	payloadBuf := make([]byte, len(block)+9)
+	var n int
+	n += copy(payloadBuf[n:], numToBuffer(idx))
+	n += copy(payloadBuf[n:], numToBuffer(offset))
+	n += copy(payloadBuf[n:], block)
+	msg := Message{
+		Length:  []byte{0, 0, 0, byte(len(payloadBuf))},
+		ID:      7,
+		Payload: payloadBuf,
+	}
+	return msg.SerialiseMsg()
+}
+
 func Cancel(idx, begin, length int) []byte {
 	payloadBuf := make([]byte, 12)
 	var n int

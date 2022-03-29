@@ -150,8 +150,8 @@ func newPeerTable(peers []*p2p.Peer) *tview.Table {
 	columnNames := []string{
 		"IP",
 		"Active",
-		"Down (MB/s)",
-		"Up (MB/s)",
+		"Down (MB/10s)",
+		"Up (MB/10s)",
 		"Downloading",
 		"Choked",
 		"Choking",
@@ -224,8 +224,8 @@ func (ui *UI) UpdateTable(peers []*p2p.Peer) {
 	columnNames := []string{
 		"IP",
 		"Active",
-		"Down (MB/s)",
-		"Up (MB/s)",
+		"Down (MB/10s)",
+		"Up (MB/10s)",
 		"Downloading",
 		"Choked",
 		"Choking",
@@ -246,10 +246,10 @@ func (ui *UI) UpdateTable(peers []*p2p.Peer) {
 					cell.SetTextColor(tcell.ColorRed)
 				}
 
-			case "Down (MB/s)":
-				cell.SetText(fmt.Sprint(peer.DownloadRate))
+			case "Down (MB/10s)":
+				cell.SetText(fmt.Sprintf("%4.2f", float64(peer.DownloadRate)/1024/1024))
 
-			case "Up (MB/s)":
+			case "Up (MB/10s)":
 				cell.SetText(fmt.Sprintf("%4.2f", float64(peer.UploadRate)/1024))
 
 			case "Downloading":

@@ -1,7 +1,9 @@
 package client
 
 import (
+	"fmt"
 	"math/rand"
+	"sync"
 	"time"
 
 	"github.com/0xNathanW/bittorrent-go/p2p"
@@ -19,12 +21,14 @@ type Client struct {
 	Tracker  *tracker.Tracker
 	BitField message.Bitfield
 	UI       *ui.UI
+	Seed     *sync.Cond // Used to signal when to start seeding.
 }
 
 // Create a new client instance.
 // Contains all information required to start download.
 func NewClient(path string) (*Client, error) {
-	// Uppack and parse torrent file.
+
+	// Unpack and parse torrent file.
 	torrent, err := torrent.NewTorrent(path)
 	if err != nil {
 		return nil, err
@@ -48,11 +52,7 @@ func NewClient(path string) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	tracker.InitParams(
-		torrent.InfoHash,
-		client.ID,
-		torrent.Size,
-	)
+	tracker.InitParams(torrent.InfoHash, client.ID, torrent.Size)
 	client.Tracker = tracker
 
 	if err = client.GetPeers(); err != nil {
@@ -78,10 +78,13 @@ func idGenerator() [20]byte {
 
 // Client retrieves and parses peers from tracker.
 func (c *Client) GetPeers() error {
+
 	peersString, err := c.Tracker.RequestPeers()
 	if err != nil {
 		return err
 	}
+
 	c.Peers = p2p.ParsePeers(peersString, len(c.BitField))
+	fmt.Println("Number of peers:", len(c.Peers))
 	return nil
 }

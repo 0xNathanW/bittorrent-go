@@ -1,40 +1,51 @@
 package client
 
 import (
-	"context"
+	"fmt"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/0xNathanW/bittorrent-go/p2p"
+	msg "github.com/0xNathanW/bittorrent-go/p2p/message"
 	"github.com/0xNathanW/bittorrent-go/torrent"
 )
 
 func (c *Client) Run() {
-	// workQ is the queue of pieces we need to download.
-	// If a worker is available, it will be given a piece from the queue.
-	// If a worker fails to download a piece, it will be put back on the queue.
-	workQ := c.Torrent.NewWorkQueue()
-	defer close(workQ)
 
-	// dataQ is a recieves piece data from workers.
-	dataQ := make(chan *torrent.PieceData)
-	defer close(dataQ)
-
-	// requestQ is a buffer of requests for pieces.
-	// requests consist of the idx, begin, and length of the piece.
-	requestQ := make(chan [3]int)
+	workQ := c.Torrent.NewWorkQueue()      // workQ is the queue of pieces we need to download.
+	dataQ := make(chan *torrent.PieceData) // dataQ recieves piece data from workers.
+	requestQ := make(chan p2p.Request)     // requestQ is the queue of requests we need to send to peers.
 	defer close(requestQ)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	_ = cancel
+	// "Disconnected" tracks that we have at least 1 connected peer.
+	disconnected := struct {
+		sync.Mutex
+		num int
+	}{}
 
-	// Start workers, each in a goroutine.
 	for _, peer := range c.Peers {
-		go peer.Run(ctx, c.ID, c.Torrent, workQ, dataQ, requestQ)
+		go func(p *p2p.Peer) {
+			p.Run(c.ID, c.Torrent, workQ, dataQ, requestQ)
+			disconnected.Unlock()
+			disconnected.num++
+			if disconnected.num == len(c.Peers) {
+				fmt.Println("All peers disconnected. Shutting down.")
+				os.Exit(0)
+			}
+			disconnected.Lock()
+
+		}(peer)
 	}
 
-	// Collect downloaded pieces.
-	go c.collectPieces(dataQ, requestQ)
+	buf := make([]byte, c.Torrent.Size)
+
+	go func() {
+		c.collectPieces(buf, dataQ)
+		c.seed()
+	}()
+
+	go c.serveRequests(buf, requestQ)
 
 	// Run tview event loop.
 	if err := c.UI.App.SetFocus(c.UI.PeerTable).Run(); err != nil {
@@ -42,13 +53,11 @@ func (c *Client) Run() {
 	}
 }
 
-func (c *Client) collectPieces(dataQ <-chan *torrent.PieceData, requestQ <-chan [3]int) {
+func (c *Client) collectPieces(buf []byte, dataQ <-chan *torrent.PieceData) {
 
-	buf := make([]byte, c.Torrent.Size) // Output buffer.
-
-	var done int            // Tracks number of pieces downloaded.
-	var bytesDownloaded int // Tracks number of megabytes downloaded.
-	var mbps float64        // Kilobytes per second.
+	var done int            // Number of pieces downloaded.
+	var bytesDownloaded int // Number of megabytes downloaded.
+	var mbps float64        // Megabytes per second.
 	sec := time.NewTicker(time.Second)
 	sec10 := time.NewTicker(time.Second * 10)
 
@@ -56,8 +65,7 @@ func (c *Client) collectPieces(dataQ <-chan *torrent.PieceData, requestQ <-chan 
 	for done < len(c.Torrent.Pieces) {
 
 		select {
-		// When a piece is pulled from the data queue,
-		// It is written to the output buffer.
+		// Piece data received and written to buffer.
 		case piece := <-dataQ:
 
 			start, end, err := c.Torrent.PiecePosition(piece.Index)
@@ -66,11 +74,10 @@ func (c *Client) collectPieces(dataQ <-chan *torrent.PieceData, requestQ <-chan 
 			}
 
 			n := copy(buf[start:end], piece.Data)
+			c.BitField.SetPiece(piece.Index)
 			bytesDownloaded += n
 			mbps += float64(n) / 1024 / 1024 // Convert to megabytes.
 			done++
-
-		// case request := <-requestQ:
 
 		case <-sec.C:
 
@@ -91,8 +98,6 @@ func (c *Client) collectPieces(dataQ <-chan *torrent.PieceData, requestQ <-chan 
 	}
 	// Write output buffer to file.
 	c.writeToFile(buf)
-
-	// Logic for transition to seeding.
 }
 
 func (c *Client) writeToFile(buf []byte) error {
@@ -161,11 +166,39 @@ func (c *Client) chokingAlgo() {
 
 		// 		if peer.IP.String() == uploadSort[i].IP.String() {
 		// 			peer.Downloading = true
-		// 			peer.Activity.Write([]byte("[green]serving requests from peer.[-]"))
+		// 			peer.Activity.Write([]byte("[green]serving requests from peer.\n\n[-]"))
 		// 		} else {
 		// 			peer.Downloading = false
 		// 		}
 		// 	}
 		// }
 	}
+}
+
+func (c *Client) serveRequests(buf []byte, requestQ <-chan p2p.Request) {
+	for {
+		select {
+
+		case request := <-requestQ:
+
+			if !c.BitField.HasPiece(request.Idx) {
+				continue
+			}
+
+			start, _, err := c.Torrent.PiecePosition(request.Idx)
+			if err != nil {
+				continue
+			}
+
+			// Retrieve piece from buffer.
+			piece := buf[start+request.Offset : start+request.Offset+request.Length]
+
+			request.Peer.MsgBuffer <- msg.Block(request.Idx, request.Offset, piece)
+			request.Peer.Uploaded += int(len(piece))
+		}
+	}
+}
+
+func (c *Client) seed() {
+
 }

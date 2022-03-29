@@ -1,7 +1,6 @@
 package p2p
 
 import (
-	"context"
 	"crypto/sha1"
 	"encoding/binary"
 	"fmt"
@@ -12,12 +11,11 @@ import (
 )
 
 func (p *Peer) Run(
-	ctx context.Context,
 	ID [20]byte,
 	t *torrent.Torrent,
 	workQ chan torrent.Piece,
 	dataQ chan<- *torrent.PieceData,
-	requestQ chan<- [3]int,
+	requestQ chan<- Request,
 ) {
 
 	if err := p.establishPeer(ID, t.InfoHash); err != nil {
@@ -40,9 +38,6 @@ func (p *Peer) Run(
 
 	for {
 		select {
-
-		case <-ctx.Done():
-			return
 
 		case msg := <-p.MsgBuffer:
 			p.send(msg)
@@ -77,7 +72,7 @@ func (p *Peer) Run(
 func (p *Peer) downloadPiece(
 	piece torrent.Piece,
 	dataQ chan<- *torrent.PieceData,
-	requestQ chan<- [3]int,
+	requestQ chan<- Request,
 ) error {
 
 	p.Conn.SetDeadline(time.Now().Add(30 * time.Second))
@@ -111,20 +106,21 @@ func (p *Peer) downloadPiece(
 	// read responses.
 	for downloaded < piece.Length {
 
+		// Read next message.
 		m, err := p.read()
 		if err != nil {
 			return fmt.Errorf("failed to read from connection: %v", err)
 		}
 
-		// Add requests to queue if good peer.
 		if m.ID == 6 {
+			// If the peer is allowed, add to the request queue.
 			if p.Downloading {
 				idx := int(binary.BigEndian.Uint32(m.Payload[0:4]))
 				off := int(binary.BigEndian.Uint32(m.Payload[4:8]))
 				length := int(binary.BigEndian.Uint32(m.Payload[8:12]))
-				requestQ <- [3]int{idx, off, length}
+				requestQ <- Request{p, idx, off, length}
 				continue
-			} else {
+			} else { // If not allowed, choke.
 				p.send(msg.Choke())
 				continue
 			}

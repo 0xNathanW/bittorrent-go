@@ -38,8 +38,16 @@ type Peer struct {
 	Activity *tview.TextView
 }
 
+type Request struct {
+	Peer   *Peer
+	Idx    int
+	Offset int
+	Length int
+}
+
 // String sent by tracker is parsed into peer structs.
 func ParsePeers(peerString string, bfLength int) []*Peer {
+
 	var peers []*Peer
 	// Each peer is a string of length 6.
 	numPeers := len(peerString) / 6
@@ -104,7 +112,7 @@ func (p *Peer) send(data []byte) error {
 	if err != nil {
 		return fmt.Errorf("failed to send data: %w", err)
 	}
-	// Update activity, ID is fourth idx.
+	// Update activity, blocks will clog feed.
 	if data[4] != 6 {
 		p.Activity.Write([]byte(fmt.Sprintf("==> %s\n\n", msg.MsgIDmap[data[4]])))
 	}
@@ -176,7 +184,12 @@ func (p *Peer) handleOther(m *msg.Message) {
 		p.IsChoking = false
 
 	case 2: // Interested
-		p.IsInterested = true // TODO: Check if we should be uploading to peer.
+		if p.Downloading {
+			p.IsInterested = true
+			p.send(msg.Unchoke())
+		} else {
+			p.send(msg.Choke())
+		}
 
 	case 3: // Not interested
 		p.IsInterested = false
