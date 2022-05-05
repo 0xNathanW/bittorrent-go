@@ -16,7 +16,7 @@ type Peer struct {
 	PeerID   [20]byte
 	IP       net.IP
 	Port     string
-	Conn     net.Conn
+	Conn     net.TCPConn
 	BitField msg.Bitfield
 	Active   bool
 	strikes  int

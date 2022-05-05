@@ -26,9 +26,12 @@ func (c *Client) Run() {
 
 	for _, peer := range c.Peers {
 		go func(p *p2p.Peer) {
+
 			p.Run(c.ID, c.Torrent, workQ, dataQ, requestQ)
+
 			disconnected.Unlock()
 			disconnected.num++
+
 			if disconnected.num == len(c.Peers) {
 				fmt.Println("All peers disconnected. Shutting down.")
 				os.Exit(0)
@@ -42,6 +45,7 @@ func (c *Client) Run() {
 
 	go func() {
 		c.collectPieces(buf, dataQ)
+
 		c.seed()
 	}()
 
@@ -182,6 +186,7 @@ func (c *Client) serveRequests(buf []byte, requestQ <-chan p2p.Request) {
 		case request := <-requestQ:
 
 			if !c.BitField.HasPiece(request.Idx) {
+				// Send bitfiled maybe?
 				continue
 			}
 
@@ -200,5 +205,7 @@ func (c *Client) serveRequests(buf []byte, requestQ <-chan p2p.Request) {
 }
 
 func (c *Client) seed() {
+
+	min10 := time.After(time.Minute * 10)
 
 }
