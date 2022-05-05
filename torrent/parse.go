@@ -31,6 +31,7 @@ type FileFrame struct {
 
 // ParseTorrent parses the torrent file and returns a TorrentFrame struct.
 func unpackFile(path string) (*TorrentFrame, error) {
+
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("could not open torrent file: %w", err)
