@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"strconv"
 	"time"
 
 	msg "github.com/0xNathanW/bittorrent-go/p2p/message"
@@ -14,14 +13,12 @@ import (
 
 type Peer struct {
 	PeerID   [20]byte
-	IP       net.IP
-	Port     string
-	Conn     net.TCPConn
+	IP       *net.TCPAddr
+	Conn     *net.TCPConn
 	BitField msg.Bitfield
-	Active   bool
-	strikes  int
-	// Buffer for messages outside peer goroutine
-	MsgBuffer chan []byte
+
+	Active  bool
+	strikes int
 
 	DownloadRate int
 	UploadRate   int
@@ -46,62 +43,69 @@ type Request struct {
 }
 
 // String sent by tracker is parsed into peer structs.
-func ParsePeers(peerString string, bfLength int) []*Peer {
+func ParsePeers(peerString string, bfLength int) ([]*Peer, []*net.TCPAddr) {
 
 	var peers []*Peer
+	var inactive []*net.TCPAddr
 	// Each peer is a string of length 6.
 	numPeers := len(peerString) / 6
 
 	for i := 0; i < numPeers; i++ {
 
-		ip := peerString[i*6 : i*6+4]             // First 4 bytes are IP address.
-		port := []byte(peerString[i*6+4 : i*6+6]) // Next 2 bytes are port.
-
-		peer := &Peer{
-			IP:        net.IP{ip[0], ip[1], ip[2], ip[3]},
-			Port:      strconv.Itoa(int(binary.BigEndian.Uint16(port))),
-			BitField:  make(msg.Bitfield, bfLength),
-			MsgBuffer: make(chan []byte, 5),
-
-			Active:       false,
-			Choked:       true,
-			Interested:   false,
-			IsChoking:    true,
-			IsInterested: false,
-
-			DownloadRate: 0,
-			UploadRate:   0,
-
-			Activity: tview.NewTextView().
-				SetScrollable(true).
-				ScrollToEnd().
-				SetDynamicColors(true).
-				SetMaxLines(20),
+		address, err := net.ResolveTCPAddr("tcp", peerString[i*6:(i+1)*6])
+		if err != nil {
+			print("failed to resolve address %s:", peerString[i*6:(i+1)*6], err)
+			continue
 		}
 
-		peer.Activity.
-			SetBorder(true).
-			SetTitle("Activity").
-			SetTitleAlign(tview.AlignLeft).
-			SetBorderPadding(1, 1, 2, 2)
-
-		peers = append(peers, peer)
+		peer, err := NewPeer(address, bfLength)
+		if err != nil {
+			inactive = append(inactive, address)
+		} else {
+			peers = append(peers, peer)
+		}
 	}
-	return peers
+	return peers, inactive
 }
 
-// Initalises peer connection.
-func (p *Peer) connect() error {
-	// Connect to IP on TCP.
-	address := net.JoinHostPort(p.IP.String(), p.Port)
-	conn, err := net.DialTimeout("tcp", address, 15*time.Second)
+func NewPeer(address *net.TCPAddr, bitfieldLength int) (*Peer, error) {
+
+	conn, err := net.DialTCP("tcp", nil, address)
 	if err != nil {
-		return fmt.Errorf("failed connection: %v", err)
+		return nil, fmt.Errorf("could not connect to peer: %v", err)
 	}
 
-	p.Conn = conn
-	p.Activity.Write([]byte("[green]TCP connection successful.[-]\n\n"))
-	return nil
+	if err := conn.SetKeepAlive(true); err != nil {
+		return nil, fmt.Errorf("could not set keep alive: %v", err)
+	}
+
+	p := &Peer{
+		IP:       address,
+		Conn:     conn,
+		BitField: make(msg.Bitfield, bitfieldLength),
+
+		Active:       false,
+		Choked:       true,
+		Interested:   false,
+		IsChoking:    true,
+		IsInterested: false,
+
+		Activity: tview.NewTextView().
+			SetScrollable(true).
+			ScrollToEnd().
+			SetDynamicColors(true).
+			SetMaxLines(20),
+	}
+
+	p.Activity.
+		SetBorder(true).
+		SetTitle("Activity").
+		SetTitleAlign(tview.AlignLeft).
+		SetBorderPadding(1, 1, 2, 2)
+
+	p.Activity.Write([]byte("[green]Connected to peer[-]\n\n"))
+
+	return p, nil
 }
 
 // Serialised message is written to peer connection.
@@ -110,7 +114,7 @@ func (p *Peer) send(data []byte) error {
 
 	_, err := p.Conn.Write(data)
 	if err != nil {
-		return fmt.Errorf("failed to send data: %w", err)
+		return fmt.Errorf("failed to send msg: %w", err)
 	}
 	// Update activity, blocks will clog feed.
 	if data[4] != 6 {
@@ -121,7 +125,6 @@ func (p *Peer) send(data []byte) error {
 
 // Reads single message from peer connection.
 func (p *Peer) read() (*msg.Message, error) {
-
 	p.Conn.SetReadDeadline(time.Now().Add(10 * time.Second))
 	message := new(msg.Message)
 
@@ -235,10 +238,6 @@ func (p *Peer) exchangeHandshake(ID, infoHash [20]byte) error {
 // Establish peer ensures a verified connection to a peer
 // and that we have information about what pieces the peer has.
 func (p *Peer) establishPeer(ID, infoHash [20]byte) error {
-	// Connect to peer and exchange handshake.
-	if err := p.connect(); err != nil {
-		return err
-	}
 
 	if err := p.exchangeHandshake(ID, infoHash); err != nil {
 		return err
@@ -291,17 +290,8 @@ func (p *Peer) buildBitfield() error {
 	return nil
 }
 
-// Attempts to reconnect to peer 3 times at 30 second intervals.
-func (p *Peer) attemptReconnect(ID, infoHash [20]byte) error {
-
-	time.Sleep(time.Second * 30)
-	for i := 0; i < 2; i++ {
-		if err := p.establishPeer(ID, infoHash); err == nil {
-			return nil
-		}
-		p.Activity.Write([]byte(fmt.Sprintf("[red]reconnection attempt %v failed[-]\n\n", i+1)))
-		time.Sleep(time.Second * 30)
-	}
-
-	return fmt.Errorf("failed reconnection 3 times, disconnecting")
+func (p *Peer) disconnect() {
+	p.Conn.Close()
+	p.Active = false
+	p.Activity.Write([]byte("[red]peer disconnected.[-]\n\n"))
 }

@@ -1,7 +1,6 @@
 package client
 
 import (
-	"fmt"
 	"math/rand"
 	"net"
 	"sync"
@@ -87,8 +86,5 @@ func (c *Client) GetPeers() error {
 	}
 
 	c.Peers, c.Inactive = p2p.ParsePeers(peersString, len(c.BitField))
-	if len(c.Peers) == 0 {
-		return fmt.Errorf("no peers found")
-	}
 	return nil
 }
