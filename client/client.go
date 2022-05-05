@@ -3,6 +3,7 @@ package client
 import (
 	"fmt"
 	"math/rand"
+	"net"
 	"sync"
 	"time"
 
@@ -18,6 +19,7 @@ type Client struct {
 	ID       [20]byte // The client's unique ID.
 	Torrent  *torrent.Torrent
 	Peers    []*p2p.Peer
+	Inactive []*net.TCPAddr // IP addresses of inactive peers.
 	Tracker  *tracker.Tracker
 	BitField message.Bitfield
 	UI       *ui.UI
@@ -84,7 +86,9 @@ func (c *Client) GetPeers() error {
 		return err
 	}
 
-	c.Peers = p2p.ParsePeers(peersString, len(c.BitField))
-	fmt.Println("Number of peers:", len(c.Peers))
+	c.Peers, c.Inactive = p2p.ParsePeers(peersString, len(c.BitField))
+	if len(c.Peers) == 0 {
+		return fmt.Errorf("no peers found")
+	}
 	return nil
 }

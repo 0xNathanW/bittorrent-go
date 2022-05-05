@@ -1,7 +1,6 @@
 package client
 
 import (
-	"fmt"
 	"os"
 	"sync"
 	"time"
@@ -26,15 +25,14 @@ func (c *Client) Run() {
 
 	for _, peer := range c.Peers {
 		go func(p *p2p.Peer) {
+
 			p.Run(c.ID, c.Torrent, workQ, dataQ, requestQ)
 			disconnected.Unlock()
 			disconnected.num++
 			if disconnected.num == len(c.Peers) {
-				fmt.Println("All peers disconnected. Shutting down.")
 				os.Exit(0)
 			}
 			disconnected.Lock()
-
 		}(peer)
 	}
 

@@ -19,35 +19,18 @@ func (p *Peer) Run(
 ) {
 
 	if err := p.establishPeer(ID, t.InfoHash); err != nil {
-
-		p.Activity.Write([]byte("[red]" + err.Error() + "[-]\n\n"))
-		p.Activity.Write([]byte("[red]attempting to reconnect...[-]\n\n"))
-
-		if err := p.attemptReconnect(ID, t.InfoHash); err != nil {
-			p.Activity.Write([]byte("[red]" + err.Error() + "[-]\n\n"))
-			return
-		}
+		p.Activity.Write([]byte(fmt.Sprintf("[red]failed to establish connection: %v.[-]\n\n", err)))
+		p.Conn.Close()
+		return
 	}
 	p.Active = true
 
-	defer func() {
-		p.Conn.Close()
-		p.Active = false
-		p.Activity.Write([]byte("[red]disconnected from peer[-]\n\n"))
-	}()
+	defer p.disconnect()
 
 	for {
 		select {
 
-		case msg := <-p.MsgBuffer:
-			p.send(msg)
-
 		case piece := <-workQ:
-
-			if p.strikes > 5 { // 5 strikes and peer gets disconnected.
-				p.Activity.Write([]byte("[red]too many strikes, disconnecting...[-]\n\n"))
-				return
-			}
 
 			if p.Downloading && p.Choked { // If a top peer, unchoke them.
 				p.send(msg.Unchoke())
@@ -62,18 +45,20 @@ func (p *Peer) Run(
 			if err := p.downloadPiece(piece, dataQ, requestQ); err != nil {
 				workQ <- piece
 				p.Activity.Write([]byte("[red]" + err.Error() + "[-]\n\n"))
-				p.strikes++ // Add a strike if download fails.
+
+				p.strikes++        // Add a strike if download fails.
+				if p.strikes > 5 { // 5 strikes and peer gets disconnected.
+					p.Activity.Write([]byte("[red]too many strikes, disconnecting...[-]\n\n"))
+					return
+				}
+
 				continue
 			}
 		}
 	}
 }
 
-func (p *Peer) downloadPiece(
-	piece torrent.Piece,
-	dataQ chan<- *torrent.PieceData,
-	requestQ chan<- Request,
-) error {
+func (p *Peer) downloadPiece(piece torrent.Piece, dataQ chan<- *torrent.PieceData, requestQ chan<- Request) error {
 
 	p.Conn.SetDeadline(time.Now().Add(30 * time.Second))
 
@@ -83,8 +68,8 @@ func (p *Peer) downloadPiece(
 	 */
 
 	p.Activity.Write([]byte(fmt.Sprintf("downloading piece %d.\n\n", piece.Index)))
-	requested, downloaded := 0, 0
 
+	requested, downloaded := 0, 0
 	data := make([]byte, piece.Length)
 
 	// Request all blocks in piece.
@@ -139,7 +124,6 @@ func (p *Peer) downloadPiece(
 					piece.Index, msgIdx,
 				)
 			}
-
 			// Check begin is less than length of data.
 			if msgBegin >= piece.Length {
 				return fmt.Errorf(
@@ -147,7 +131,6 @@ func (p *Peer) downloadPiece(
 					piece.Length, msgBegin,
 				)
 			}
-
 			// Check if begin plus length is greater than length of data.
 			if msgBegin+len(msgData) > piece.Length {
 				return fmt.Errorf(
