@@ -3,6 +3,7 @@ package p2p
 import (
 	"crypto/sha1"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"time"
 
@@ -19,7 +20,7 @@ func (p *Peer) Run(
 ) {
 
 	if err := p.establishPeer(ID, t.InfoHash); err != nil {
-		p.Activity.Write([]byte(fmt.Sprintf("[red]failed to establish connection: %v.[-]\n\n", err)))
+		p.Activity.Write([]byte(fmt.Sprintf("[red]failed to establish peer: %v.[-]\n\n", err)))
 		p.Conn.Close()
 		return
 	}
@@ -27,35 +28,30 @@ func (p *Peer) Run(
 
 	defer p.disconnect()
 
-	for {
-		select {
+	for piece := range workQ { // Range ends when workQ is closed.
 
-		case piece := <-workQ:
-
-			if p.Downloading && p.Choked { // If a top peer, unchoke them.
-				p.send(msg.Unchoke())
-			}
-
-			// If peer doesnt have piece, put it back in the queue.
-			if !p.BitField.HasPiece(piece.Index) {
-				workQ <- piece
-				continue
-			}
-
-			if err := p.downloadPiece(piece, dataQ, requestQ); err != nil {
-				workQ <- piece
-				p.Activity.Write([]byte("[red]" + err.Error() + "[-]\n\n"))
-
-				p.strikes++        // Add a strike if download fails.
-				if p.strikes > 5 { // 5 strikes and peer gets disconnected.
-					p.Activity.Write([]byte("[red]too many strikes, disconnecting...[-]\n\n"))
-					return
-				}
-
-				continue
-			}
+		// If peer doesnt have piece, put it back in the queue.
+		if !p.BitField.HasPiece(piece.Index) {
+			workQ <- piece
+			continue
 		}
+
+		if err := p.downloadPiece(piece, dataQ, requestQ); err != nil {
+			workQ <- piece
+			p.Activity.Write([]byte("[red]" + err.Error() + "[-]\n\n"))
+
+			p.strikes++        // Add a strike if download fails.
+			if p.strikes > 5 { // 5 strikes and peer gets disconnected.
+				p.Activity.Write([]byte("[red]too many strikes, disconnecting...[-]\n\n"))
+				return
+			}
+
+			continue
+		}
+
 	}
+
+	// SEED LOGIC
 }
 
 func (p *Peer) downloadPiece(piece torrent.Piece, dataQ chan<- *torrent.PieceData, requestQ chan<- Request) error {
@@ -144,7 +140,7 @@ func (p *Peer) downloadPiece(piece torrent.Piece, dataQ chan<- *torrent.PieceDat
 			downloaded += n
 
 		} else {
-			p.handleOther(m)
+			p.handle(m)
 		}
 	}
 
@@ -156,7 +152,7 @@ func (p *Peer) downloadPiece(piece torrent.Piece, dataQ chan<- *torrent.PieceDat
 	var pieceHash [20]byte
 	copy(pieceHash[:], hash)
 	if pieceHash != piece.Hash {
-		return fmt.Errorf("piece hash mismatch")
+		return errors.New("piece hash mismatch")
 	}
 
 	// send piece to dataQ.

@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"net"
 	"strings"
 	"time"
 
@@ -34,7 +35,7 @@ type UI struct {
 }
 
 // Creates a new UI instance.
-func NewUI(t *torrent.Torrent, peers []*p2p.Peer) (*UI, error) {
+func NewUI(t *torrent.Torrent, peers map[*net.TCPAddr]*p2p.Peer) (*UI, error) {
 
 	ui := &UI{
 		App: tview.NewApplication(),
@@ -134,7 +135,7 @@ func (ui *UI) UpdateProgress(done int) {
 	ui.Progress.SetValue(done)
 }
 
-func newPeerTable(peers []*p2p.Peer) *tview.Table {
+func newPeerTable(peers map[*net.TCPAddr]*p2p.Peer) *tview.Table {
 
 	table := tview.NewTable().
 		SetSelectable(true, false). // Enable row selection.
@@ -206,16 +207,17 @@ func newPeerTable(peers []*p2p.Peer) *tview.Table {
 	return table
 }
 
-func newPeerPages(peers []*p2p.Peer) *tview.Pages {
+func newPeerPages(peers map[*net.TCPAddr]*p2p.Peer) *tview.Pages {
 
 	peerPages := tview.NewPages()
 
-	for _, peer := range peers {
+	for address, peer := range peers {
 		peerPages.AddPage(
-			peer.IP.String(), peer.Activity, true, false)
+			address.IP.String(), peer.Activity, true, false)
 	}
 
-	peerPages.SwitchToPage(peers[0].IP.String())
+	first, _ := peerPages.GetFrontPage()
+	peerPages.SwitchToPage(first)
 	return peerPages
 }
 

@@ -27,7 +27,7 @@ type Client struct {
 
 type Peers struct {
 	sync.RWMutex
-	active   map[[20]byte]*p2p.Peer
+	active   map[*net.TCPAddr]*p2p.Peer // Maps peer IP to peers.
 	inactive []*net.TCPAddr
 }
 

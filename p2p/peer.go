@@ -43,11 +43,11 @@ type Request struct {
 }
 
 // String sent by tracker is parsed into peer structs.
-func ParsePeers(peerString string, bfLength int) (map[[20]byte]*Peer, []*net.TCPAddr) {
+func ParsePeers(peerString string, bfLength int) (map[*net.TCPAddr]*Peer, []*net.TCPAddr) {
 
 	// Each peer is a string of length 6.
 	numPeers := len(peerString) / 6
-	peers := make(map[[20]byte]*Peer)
+	peers := make(map[*net.TCPAddr]*Peer)
 	var inactive []*net.TCPAddr
 
 	for i := 0; i < numPeers; i++ {
@@ -60,7 +60,7 @@ func ParsePeers(peerString string, bfLength int) (map[[20]byte]*Peer, []*net.TCP
 
 		peer, err := NewPeer(address, bfLength)
 		if err != nil {
-			peers[peer.PeerID] = peer
+			peers[peer.IP] = peer
 		} else {
 			inactive = append(inactive, address)
 		}
@@ -159,26 +159,25 @@ func (p *Peer) read() (*msg.Message, error) {
 	return message, nil
 }
 
+// Have messages are received semi-randomly.
+// We read consecutive have msgs, stopping once we retrieve a non-have msg.
 func (p *Peer) handleHave(m *msg.Message) {
-
 	p.BitField.SetPiece(int(binary.BigEndian.Uint32(m.Payload[0:4])))
-
 	for {
 		m, err := p.read()
 		if err != nil {
 			return
 		}
-
-		if m.ID != 4 {
-			p.handleOther(m)
+		if m.ID != 4 { // Not have.
+			p.handle(m)
 			return
 		}
-
 		p.BitField.SetPiece(int(binary.BigEndian.Uint32(m.Payload[0:4])))
 	}
 }
 
-func (p *Peer) handleOther(m *msg.Message) {
+// Generic message handler.
+func (p *Peer) handle(m *msg.Message) {
 	switch m.ID {
 	case 0: // Choke
 		p.IsChoking = true
@@ -259,7 +258,7 @@ func (p *Peer) establishPeer(ID, infoHash [20]byte) error {
 	}
 	// Sometimes peers will annoyingly send have messages after bitfields.
 	// However we should be expecting an unchoke message.
-	p.handleOther(message)
+	p.handle(message)
 
 	p.Activity.Write([]byte("[green]peer established.[-]\n\n"))
 	return nil
@@ -272,19 +271,18 @@ func (p *Peer) buildBitfield() error {
 	if err != nil {
 		return err
 	}
-
+	// Case of have or bitfield.
 	if message.ID == 4 || message.ID == 5 {
-		p.handleOther(message)
+		p.handle(message)
 
-	} else if message.ID == 1 {
-		p.handleOther(message)
-
+	} else if message.ID == 1 { // If peer is unchoking, try again.
+		p.handle(message)
 		if err := p.buildBitfield(); err != nil {
 			return err
 		}
 
 	} else {
-		p.handleOther(message)
+		p.handle(message)
 		return fmt.Errorf("expected user piece info, got: %v", msg.MsgIDmap[message.ID])
 	}
 	return nil
