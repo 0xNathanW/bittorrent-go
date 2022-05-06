@@ -1,6 +1,7 @@
 package client
 
 import (
+	"errors"
 	"math/rand"
 	"net"
 	"sync"
@@ -17,12 +18,17 @@ import (
 type Client struct {
 	ID       [20]byte // The client's unique ID.
 	Torrent  *torrent.Torrent
-	Peers    []*p2p.Peer
-	Inactive []*net.TCPAddr // IP addresses of inactive peers.
+	Peers    *Peers
 	Tracker  *tracker.Tracker
 	BitField message.Bitfield
 	UI       *ui.UI
 	Seed     *sync.Cond // Used to signal when to start seeding.
+}
+
+type Peers struct {
+	sync.RWMutex
+	active   map[[20]byte]*p2p.Peer
+	inactive []*net.TCPAddr
 }
 
 // Create a new client instance.
@@ -85,6 +91,16 @@ func (c *Client) GetPeers() error {
 		return err
 	}
 
-	c.Peers, c.Inactive = p2p.ParsePeers(peersString, len(c.BitField))
+	peers, inactive := p2p.ParsePeers(peersString, len(c.BitField))
+	if len(peers) == 0 {
+		return errors.New("No peers found.")
+	}
+
+	c.Peers = &Peers{
+		active:   peers,
+		inactive: inactive,
+	}
+	c.Peers.Lock()
+
 	return nil
 }

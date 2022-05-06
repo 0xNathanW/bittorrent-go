@@ -43,12 +43,12 @@ type Request struct {
 }
 
 // String sent by tracker is parsed into peer structs.
-func ParsePeers(peerString string, bfLength int) ([]*Peer, []*net.TCPAddr) {
+func ParsePeers(peerString string, bfLength int) (map[[20]byte]*Peer, []*net.TCPAddr) {
 
-	var peers []*Peer
-	var inactive []*net.TCPAddr
 	// Each peer is a string of length 6.
 	numPeers := len(peerString) / 6
+	peers := make(map[[20]byte]*Peer)
+	var inactive []*net.TCPAddr
 
 	for i := 0; i < numPeers; i++ {
 
@@ -60,9 +60,9 @@ func ParsePeers(peerString string, bfLength int) ([]*Peer, []*net.TCPAddr) {
 
 		peer, err := NewPeer(address, bfLength)
 		if err != nil {
-			inactive = append(inactive, address)
+			peers[peer.PeerID] = peer
 		} else {
-			peers = append(peers, peer)
+			inactive = append(inactive, address)
 		}
 	}
 	return peers, inactive

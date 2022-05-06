@@ -2,7 +2,6 @@ package client
 
 import (
 	"os"
-	"sync"
 	"time"
 
 	"github.com/0xNathanW/bittorrent-go/p2p"
@@ -16,33 +15,13 @@ func (c *Client) Run() {
 	dataQ := make(chan *torrent.PieceData) // dataQ recieves piece data from workers.
 	requestQ := make(chan p2p.Request)     // requestQ is the queue of requests we need to send to peers.
 	defer close(requestQ)
-
-	// "Disconnected" tracks that we have at least 1 connected peer.
-	disconnected := struct {
-		sync.Mutex
-		num int
-	}{}
-
-	for _, peer := range c.Peers {
-		go func(p *p2p.Peer) {
-
-			p.Run(c.ID, c.Torrent, workQ, dataQ, requestQ)
-			disconnected.Unlock()
-			disconnected.num++
-			if disconnected.num == len(c.Peers) {
-				os.Exit(0)
-			}
-			disconnected.Lock()
-		}(peer)
-	}
-
 	buf := make([]byte, c.Torrent.Size)
 
-	go func() {
-		c.collectPieces(buf, dataQ)
-		c.seed()
-	}()
+	for _, peer := range c.Peers.active {
+		c.operatePeer(peer, workQ, dataQ, requestQ)
+	}
 
+	go c.collectPieces(buf, dataQ)
 	go c.serveRequests(buf, requestQ)
 
 	// Run tview event loop.
@@ -51,11 +30,32 @@ func (c *Client) Run() {
 	}
 }
 
+func (c *Client) operatePeer(
+	p *p2p.Peer,
+	workQ chan torrent.Piece,
+	dataQ chan<- *torrent.PieceData,
+	requestQ chan<- p2p.Request,
+) {
+
+	p.Run(c.ID, c.Torrent, workQ, dataQ, requestQ)
+	// When peer disconnects, it returns from Run().
+	c.Peers.Unlock()
+
+	delete(c.Peers.active, p.PeerID)
+	c.Peers.inactive = append(c.Peers.inactive, p.IP)
+
+	c.Peers.Lock()
+
+	if len(c.Peers.active) == 0 {
+		// Some sort of shutdown procedure.
+	}
+}
+
 func (c *Client) collectPieces(buf []byte, dataQ <-chan *torrent.PieceData) {
 
 	var done int            // Number of pieces downloaded.
-	var bytesDownloaded int // Number of megabytes downloaded.
-	var mbps float64        // Megabytes per second.
+	var bytesDownloaded int // Number of bytes downloaded.
+
 	sec := time.NewTicker(time.Second)
 	sec10 := time.NewTicker(time.Second * 10)
 
@@ -73,27 +73,21 @@ func (c *Client) collectPieces(buf []byte, dataQ <-chan *torrent.PieceData) {
 
 			n := copy(buf[start:end], piece.Data)
 			c.BitField.SetPiece(piece.Index)
+
 			bytesDownloaded += n
-			mbps += float64(n) / 1024 / 1024 // Convert to megabytes.
 			done++
 
 		case <-sec.C:
 
-			c.UI.App.QueueUpdateDraw(
-				func() {
-
-					c.UI.Graph.Update(mbps)
-					c.UI.UpdateTable(c.Peers)
-					c.UI.UpdateProgress(done)
-
-				},
-			)
-			mbps = 0
+			mbps := float64(bytesDownloaded) / (1024 * 1024)
+			_ = mbps
 
 		case <-sec10.C:
 			go c.chokingAlgo()
 		}
 	}
+
+	c.seed()
 	// Write output buffer to file.
 	c.writeToFile(buf)
 }
@@ -138,39 +132,39 @@ func (c *Client) writeToFile(buf []byte) error {
 // Allows uploading to the top 4 peers that provide the most data.
 func (c *Client) chokingAlgo() {
 
-	last := make(map[*p2p.Peer][2]int)
-	ticker := time.NewTicker(time.Second * 10)
+	// last := make(map[*p2p.Peer][2]int)
+	// ticker := time.NewTicker(time.Second * 10)
 
-	for range ticker.C {
+	// for range ticker.C {
 
-		for _, peer := range c.Peers {
-			if peer.Active {
-				peer.DownloadRate = peer.Downloaded - last[peer][0]
-				peer.UploadRate = peer.Uploaded - last[peer][1]
-				last[peer] = [2]int{peer.Downloaded, peer.Uploaded}
-			} else {
-				peer.DownloadRate = 0
-				peer.UploadRate = 0
-			}
-		}
+	// 	for _, peer := range c.Peers {
+	// 		if peer.Active {
+	// 			peer.DownloadRate = peer.Downloaded - last[peer][0]
+	// 			peer.UploadRate = peer.Uploaded - last[peer][1]
+	// 			last[peer] = [2]int{peer.Downloaded, peer.Uploaded}
+	// 		} else {
+	// 			peer.DownloadRate = 0
+	// 			peer.UploadRate = 0
+	// 		}
+	// 	}
 
-		// uploadSort := c.Peers
-		// sort.Slice(uploadSort, func(i, j int) bool {
-		// 	return uploadSort[i].DownloadRate > uploadSort[j].DownloadRate
-		// })
+	// 	// uploadSort := c.Peers
+	// 	// sort.Slice(uploadSort, func(i, j int) bool {
+	// 	// 	return uploadSort[i].DownloadRate > uploadSort[j].DownloadRate
+	// 	// })
 
-		// for i := 0; i < 4; i++ {
-		// 	for _, peer := range c.Peers {
+	// 	// for i := 0; i < 4; i++ {
+	// 	// 	for _, peer := range c.Peers {
 
-		// 		if peer.IP.String() == uploadSort[i].IP.String() {
-		// 			peer.Downloading = true
-		// 			peer.Activity.Write([]byte("[green]serving requests from peer.\n\n[-]"))
-		// 		} else {
-		// 			peer.Downloading = false
-		// 		}
-		// 	}
-		// }
-	}
+	// 	// 		if peer.IP.String() == uploadSort[i].IP.String() {
+	// 	// 			peer.Downloading = true
+	// 	// 			peer.Activity.Write([]byte("[green]serving requests from peer.\n\n[-]"))
+	// 	// 		} else {
+	// 	// 			peer.Downloading = false
+	// 	// 		}
+	// 	// 	}
+	// 	// }
+	// }
 }
 
 func (c *Client) serveRequests(buf []byte, requestQ <-chan p2p.Request) {
