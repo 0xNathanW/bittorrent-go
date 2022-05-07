@@ -30,7 +30,7 @@ type Client struct {
 
 type Peers struct {
 	sync.RWMutex
-	active   map[*net.TCPAddr]*p2p.Peer // Maps peer IP to peers.
+	active   map[string]*p2p.Peer // Maps peer IP to peers.
 	inactive []*net.TCPAddr
 }
 
@@ -91,7 +91,7 @@ func idGenerator() [20]byte {
 
 // Client retrieves and parses peers from tracker.
 func (c *Client) GetPeers() error {
-
+	fmt.Println("Retrieving peers...")
 	peerString, err := c.Tracker.RequestPeers()
 	if err != nil {
 		return err
@@ -100,8 +100,8 @@ func (c *Client) GetPeers() error {
 	// Each peer is a string of length 6.
 	numPeers := len(peerString) / 6
 	c.Peers = &Peers{
-		active:   make(map[*net.TCPAddr]*p2p.Peer),
-		inactive: make([]*net.TCPAddr, 0),
+		active:   map[string]*p2p.Peer{},
+		inactive: []*net.TCPAddr{},
 	}
 	c.Peers.Lock()
 
@@ -109,14 +109,18 @@ func (c *Client) GetPeers() error {
 
 	for i := 0; i < numPeers; i++ {
 
-		ip := []byte(peerString[i*6 : i*6+4])
-		p := binary.BigEndian.Uint16([]byte(peerString[i*6+4 : i*6+6]))
+		ip := [6]byte{}
+		copy(ip[:], peerString[i*6:i*6+4])
+		p := [2]byte{}
+		copy(p[:], peerString[i*6+4:i*6+6])
+
+		port := binary.BigEndian.Uint16(p[:])
 
 		tcpIP := strconv.Itoa(int(ip[0])) + "." +
 			strconv.Itoa(int(ip[1])) + "." +
 			strconv.Itoa(int(ip[2])) + "." +
 			strconv.Itoa(int(ip[3])) + ":" +
-			strconv.Itoa(int(p))
+			strconv.Itoa(int(port))
 
 		address, err := net.ResolveTCPAddr("tcp", tcpIP)
 		if err != nil {
@@ -131,7 +135,7 @@ func (c *Client) GetPeers() error {
 			peer, err := p2p.NewPeer(address, len(c.BitField))
 			if err != nil {
 				c.Peers.Unlock()
-				c.Peers.active[address] = peer
+				c.Peers.active[address.String()] = peer
 				c.Peers.Lock()
 			} else {
 				c.Peers.Unlock()

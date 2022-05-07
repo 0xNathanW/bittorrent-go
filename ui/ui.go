@@ -2,7 +2,6 @@ package ui
 
 import (
 	"fmt"
-	"net"
 	"strings"
 	"time"
 
@@ -35,7 +34,7 @@ type UI struct {
 }
 
 // Creates a new UI instance.
-func NewUI(t *torrent.Torrent, peers map[*net.TCPAddr]*p2p.Peer) (*UI, error) {
+func NewUI(t *torrent.Torrent, peers map[string]*p2p.Peer) (*UI, error) {
 
 	ui := &UI{
 		App: tview.NewApplication(),
@@ -131,7 +130,7 @@ func (ui *UI) UpdateProgress(done int) {
 	ui.Progress.SetValue(done)
 }
 
-func (ui *UI) newPeerTable(peers map[*net.TCPAddr]*p2p.Peer) *tview.Table {
+func (ui *UI) newPeerTable(peers map[string]*p2p.Peer) *tview.Table {
 
 	table := tview.NewTable().
 		SetSelectable(true, false). // Enable row selection.
@@ -183,18 +182,17 @@ func (ui *UI) newPeerTable(peers map[*net.TCPAddr]*p2p.Peer) *tview.Table {
 		}
 		row++
 	}
-	ui.UpdateTable(peers)
+	ui.UpdateTable()
 
 	return table
 }
 
-func newPeerPages(peers map[*net.TCPAddr]*p2p.Peer) *tview.Pages {
+func newPeerPages(peers map[string]*p2p.Peer) *tview.Pages {
 
 	peerPages := tview.NewPages()
 
 	for address, peer := range peers {
-		peerPages.AddPage(
-			address.IP.String(), peer.Activity, true, false)
+		peerPages.AddPage(address, peer.Activity, true, false)
 	}
 
 	name, _ := peerPages.GetFrontPage()
@@ -202,7 +200,7 @@ func newPeerPages(peers map[*net.TCPAddr]*p2p.Peer) *tview.Pages {
 	return peerPages
 }
 
-func (ui *UI) UpdateTable(peers map[*net.TCPAddr]*p2p.Peer) {
+func (ui *UI) UpdateTable() {
 
 	columnNames := []string{
 		"IP",
@@ -221,6 +219,9 @@ func (ui *UI) UpdateTable(peers map[*net.TCPAddr]*p2p.Peer) {
 			peer := cell.Reference.(*p2p.Peer)
 
 			switch name {
+
+			case "IP":
+				cell.SetText(peer.IP.String())
 
 			case "Active":
 				cell.SetText(boolString(peer.Active))

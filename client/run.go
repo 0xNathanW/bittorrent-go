@@ -41,7 +41,7 @@ func (c *Client) operatePeer(
 	// When peer disconnects, it returns from Run().
 	c.Peers.Unlock()
 
-	delete(c.Peers.active, p.IP)
+	delete(c.Peers.active, p.IP.String())
 	c.Peers.inactive = append(c.Peers.inactive, p.IP)
 
 	c.Peers.Lock()
