@@ -1,9 +1,12 @@
 package client
 
 import (
+	"encoding/binary"
 	"errors"
+	"fmt"
 	"math/rand"
 	"net"
+	"strconv"
 	"sync"
 	"time"
 
@@ -65,12 +68,15 @@ func NewClient(path string) (*Client, error) {
 	if err = client.GetPeers(); err != nil {
 		return nil, err
 	}
+	fmt.Println("found", len(client.Peers.active), "peers")
+	fmt.Println("found", len(client.Peers.inactive), "inactive peers")
 
-	ui, err := ui.NewUI(torrent, client.Peers)
+	ui, err := ui.NewUI(torrent, client.Peers.active)
 	if err != nil {
 		return nil, err
 	}
 	client.UI = ui
+	client.Peers.RLock()
 
 	return client, nil
 }
@@ -86,21 +92,59 @@ func idGenerator() [20]byte {
 // Client retrieves and parses peers from tracker.
 func (c *Client) GetPeers() error {
 
-	peersString, err := c.Tracker.RequestPeers()
+	peerString, err := c.Tracker.RequestPeers()
 	if err != nil {
 		return err
 	}
 
-	peers, inactive := p2p.ParsePeers(peersString, len(c.BitField))
-	if len(peers) == 0 {
-		return errors.New("No peers found.")
-	}
-
+	// Each peer is a string of length 6.
+	numPeers := len(peerString) / 6
 	c.Peers = &Peers{
-		active:   peers,
-		inactive: inactive,
+		active:   make(map[*net.TCPAddr]*p2p.Peer),
+		inactive: make([]*net.TCPAddr, 0),
 	}
 	c.Peers.Lock()
+
+	wg := sync.WaitGroup{}
+
+	for i := 0; i < numPeers; i++ {
+
+		ip := []byte(peerString[i*6 : i*6+4])
+		p := binary.BigEndian.Uint16([]byte(peerString[i*6+4 : i*6+6]))
+
+		tcpIP := strconv.Itoa(int(ip[0])) + "." +
+			strconv.Itoa(int(ip[1])) + "." +
+			strconv.Itoa(int(ip[2])) + "." +
+			strconv.Itoa(int(ip[3])) + ":" +
+			strconv.Itoa(int(p))
+
+		address, err := net.ResolveTCPAddr("tcp", tcpIP)
+		if err != nil {
+			print("failed to resolve address:", peerString[i*6:(i+1)*6], err, "\n")
+			continue
+		}
+
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+
+			peer, err := p2p.NewPeer(address, len(c.BitField))
+			if err != nil {
+				c.Peers.Unlock()
+				c.Peers.active[address] = peer
+				c.Peers.Lock()
+			} else {
+				c.Peers.Unlock()
+				c.Peers.inactive = append(c.Peers.inactive, address)
+				c.Peers.Lock()
+			}
+		}(i)
+	}
+
+	wg.Wait()
+	if len(c.Peers.active) == 0 {
+		return errors.New("no peers found")
+	}
 
 	return nil
 }

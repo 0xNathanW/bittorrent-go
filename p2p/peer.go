@@ -26,6 +26,7 @@ type Peer struct {
 	Downloaded  int
 	Uploaded    int
 	Downloading bool // Should upload to best 4 peers.
+	BlockOut    chan []byte
 
 	Choked       bool
 	Interested   bool
@@ -42,46 +43,24 @@ type Request struct {
 	Length int
 }
 
-// String sent by tracker is parsed into peer structs.
-func ParsePeers(peerString string, bfLength int) (map[*net.TCPAddr]*Peer, []*net.TCPAddr) {
-
-	// Each peer is a string of length 6.
-	numPeers := len(peerString) / 6
-	peers := make(map[*net.TCPAddr]*Peer)
-	var inactive []*net.TCPAddr
-
-	for i := 0; i < numPeers; i++ {
-
-		address, err := net.ResolveTCPAddr("tcp", peerString[i*6:(i+1)*6])
-		if err != nil {
-			print("failed to resolve address %s:", peerString[i*6:(i+1)*6], err)
-			continue
-		}
-
-		peer, err := NewPeer(address, bfLength)
-		if err != nil {
-			peers[peer.IP] = peer
-		} else {
-			inactive = append(inactive, address)
-		}
-	}
-	return peers, inactive
-}
-
 func NewPeer(address *net.TCPAddr, bitfieldLength int) (*Peer, error) {
 
-	conn, err := net.DialTCP("tcp", nil, address)
+	conn, err := net.DialTimeout("tcp", address.String(), 10*time.Second)
 	if err != nil {
 		return nil, fmt.Errorf("could not connect to peer: %v", err)
 	}
+	tcpConn, ok := conn.(*net.TCPConn)
+	if !ok {
+		return nil, fmt.Errorf("could not cast connection to TCPConn")
+	}
 
-	if err := conn.SetKeepAlive(true); err != nil {
+	if err := tcpConn.SetKeepAlive(true); err != nil {
 		return nil, fmt.Errorf("could not set keep alive: %v", err)
 	}
 
 	p := &Peer{
 		IP:       address,
-		Conn:     conn,
+		Conn:     tcpConn,
 		BitField: make(msg.Bitfield, bitfieldLength),
 
 		Active:       false,

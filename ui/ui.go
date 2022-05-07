@@ -48,8 +48,6 @@ func NewUI(t *torrent.Torrent, peers map[*net.TCPAddr]*p2p.Peer) (*UI, error) {
 
 		Graph: newGraph(),
 
-		PeerTable: newPeerTable(peers),
-
 		PeerPages: newPeerPages(peers),
 
 		Progress: tvxwidgets.NewPercentageModeGauge(),
@@ -64,9 +62,7 @@ func NewUI(t *torrent.Torrent, peers map[*net.TCPAddr]*p2p.Peer) (*UI, error) {
 	ui.rightFlex.AddItem(ui.Graph.Object, 0, 1, false)
 	ui.rightFlex.AddItem(ui.Progress, 5, 0, false)
 
-	// ui.Progress.SetMaxValue(len(t.Pieces))
-	// ui.Progress.SetTitle(" Download Progress ")
-
+	ui.PeerTable = ui.newPeerTable(peers)
 	ui.PeerTable.SetSelectionChangedFunc(
 		func(row, column int) {
 			ui.PeerPages.SwitchToPage(ui.PeerTable.GetCell(row, 0).Text)
@@ -135,12 +131,12 @@ func (ui *UI) UpdateProgress(done int) {
 	ui.Progress.SetValue(done)
 }
 
-func newPeerTable(peers map[*net.TCPAddr]*p2p.Peer) *tview.Table {
+func (ui *UI) newPeerTable(peers map[*net.TCPAddr]*p2p.Peer) *tview.Table {
 
 	table := tview.NewTable().
 		SetSelectable(true, false). // Enable row selection.
 		SetEvaluateAllRows(true).
-		SetFixed(1, 0). // Fix the first row.
+		SetFixed(1, 0). // Fix the first row (column labels).
 		SetSelectedStyle(tcell.StyleDefault.
 			Foreground(tcell.ColorBlack).
 			Background(tcell.ColorWhite)).
@@ -151,8 +147,8 @@ func newPeerTable(peers map[*net.TCPAddr]*p2p.Peer) *tview.Table {
 	columnNames := []string{
 		"IP",
 		"Active",
-		"Down (MB/10s)",
-		"Up (MB/10s)",
+		"Down Speed",
+		"Up Speed",
 		"Downloading",
 		"Choked",
 		"Choking",
@@ -170,31 +166,14 @@ func newPeerTable(peers map[*net.TCPAddr]*p2p.Peer) *tview.Table {
 	}
 
 	// Fill table.
-	for r, peer := range peers {
-		for c, name := range columnNames {
+	row := 1
+	for _, peer := range peers {
+		for c := range columnNames {
 
 			var text string
 			colour := tcell.ColorWhite
 
-			switch name {
-			case "IP":
-				text = peer.IP.String()
-				colour = tcell.ColorYellow
-
-			case "Active":
-				if peer.Active {
-					text = "Yes"
-					colour = tcell.ColorGreen
-				} else {
-					text = "No"
-					colour = tcell.ColorRed
-				}
-
-			default:
-				text = ""
-			}
-
-			table.SetCell(r+1, c, &tview.TableCell{
+			table.SetCell(row, c, &tview.TableCell{
 				Reference: peer,
 				Text:      text,
 				Align:     tview.AlignLeft,
@@ -202,7 +181,9 @@ func newPeerTable(peers map[*net.TCPAddr]*p2p.Peer) *tview.Table {
 			})
 
 		}
+		row++
 	}
+	ui.UpdateTable(peers)
 
 	return table
 }
@@ -216,12 +197,12 @@ func newPeerPages(peers map[*net.TCPAddr]*p2p.Peer) *tview.Pages {
 			address.IP.String(), peer.Activity, true, false)
 	}
 
-	first, _ := peerPages.GetFrontPage()
-	peerPages.SwitchToPage(first)
+	name, _ := peerPages.GetFrontPage()
+	peerPages.SwitchToPage(name)
 	return peerPages
 }
 
-func (ui *UI) UpdateTable(peers []*p2p.Peer) {
+func (ui *UI) UpdateTable(peers map[*net.TCPAddr]*p2p.Peer) {
 
 	columnNames := []string{
 		"IP",
@@ -233,10 +214,11 @@ func (ui *UI) UpdateTable(peers []*p2p.Peer) {
 		"Choking",
 	}
 
-	for r, peer := range peers {
+	for r := 1; r < ui.PeerTable.GetRowCount(); r++ {
 		for c, name := range columnNames {
 
-			cell := ui.PeerTable.GetCell(r+1, c)
+			cell := ui.PeerTable.GetCell(r, c)
+			peer := cell.Reference.(*p2p.Peer)
 
 			switch name {
 

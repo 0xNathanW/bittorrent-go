@@ -46,15 +46,15 @@ func (c *Client) operatePeer(
 
 	c.Peers.Lock()
 
-	if len(c.Peers.active) == 0 {
-		// Some sort of shutdown procedure.
-	}
+	// if len(c.Peers.active) == 0 {
+	// 	// Some sort of shutdown procedure.
+	// }
 }
 
 func (c *Client) collectPieces(buf []byte, dataQ <-chan *torrent.PieceData) {
 
 	var done int            // Number of pieces downloaded.
-	var bytesDownloaded int // Number of bytes downloaded.
+	var bytesDownloaded int // Tracks number of bytes downloaded.
 
 	sec := time.NewTicker(time.Second)
 	sec10 := time.NewTicker(time.Second * 10)
@@ -76,6 +76,7 @@ func (c *Client) collectPieces(buf []byte, dataQ <-chan *torrent.PieceData) {
 
 			bytesDownloaded += n
 			done++
+			c.UI.App.QueueUpdateDraw(func() { c.UI.UpdateProgress(done) })
 
 		case <-sec.C:
 
@@ -168,26 +169,23 @@ func (c *Client) chokingAlgo() {
 }
 
 func (c *Client) serveRequests(buf []byte, requestQ <-chan p2p.Request) {
-	for {
-		select {
+	for request := range requestQ {
 
-		case request := <-requestQ:
-
-			if !c.BitField.HasPiece(request.Idx) {
-				continue
-			}
-
-			start, _, err := c.Torrent.PiecePosition(request.Idx)
-			if err != nil {
-				continue
-			}
-
-			// Retrieve piece from buffer.
-			piece := buf[start+request.Offset : start+request.Offset+request.Length]
-
-			request.Peer.MsgBuffer <- msg.Block(request.Idx, request.Offset, piece)
-			request.Peer.Uploaded += int(len(piece))
+		if !c.BitField.HasPiece(request.Idx) {
+			// Send bitfield?
+			continue
 		}
+
+		start, _, err := c.Torrent.PiecePosition(request.Idx)
+		if err != nil {
+			continue
+		}
+
+		// Retrieve piece from buffer.
+		var block []byte
+		_ = copy(block, buf[start+request.Offset:start+request.Offset+request.Length])
+
+		request.Peer.BlockOut <- msg.Block(request.Idx, request.Offset, block)
 	}
 }
 

@@ -28,27 +28,41 @@ func (p *Peer) Run(
 
 	defer p.disconnect()
 
-	for piece := range workQ { // Range ends when workQ is closed.
+	for {
+		select {
 
-		// If peer doesnt have piece, put it back in the queue.
-		if !p.BitField.HasPiece(piece.Index) {
-			workQ <- piece
-			continue
-		}
+		case block := <-p.BlockOut:
+			if err := p.send(block); err != nil {
+				p.Activity.Write([]byte(fmt.Sprintf("[red]failed to send block: %v.[-]\n\n", err)))
+				continue
+			}
+			p.Uploaded += (len(block) - 8)
 
-		if err := p.downloadPiece(piece, dataQ, requestQ); err != nil {
-			workQ <- piece
-			p.Activity.Write([]byte("[red]" + err.Error() + "[-]\n\n"))
+		case piece, ok := <-workQ:
 
-			p.strikes++        // Add a strike if download fails.
-			if p.strikes > 5 { // 5 strikes and peer gets disconnected.
-				p.Activity.Write([]byte("[red]too many strikes, disconnecting...[-]\n\n"))
-				return
+			if !ok { // All pieces downloaded, move to seed.
+				break
 			}
 
-			continue
-		}
+			// If peer doesnt have piece, put it back in the queue.
+			if !p.BitField.HasPiece(piece.Index) {
+				workQ <- piece
+				continue
+			}
 
+			if err := p.downloadPiece(piece, dataQ, requestQ); err != nil {
+				workQ <- piece
+				p.Activity.Write([]byte("[red]" + err.Error() + "[-]\n\n"))
+
+				p.strikes++        // Add a strike if download fails.
+				if p.strikes > 5 { // 5 strikes and peer gets disconnected.
+					p.Activity.Write([]byte("[red]too many strikes, disconnecting...[-]\n\n"))
+					return
+				}
+
+				continue
+			}
+		}
 	}
 
 	// SEED LOGIC
