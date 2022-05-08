@@ -2,6 +2,7 @@ package client
 
 import (
 	"os"
+	"sort"
 	"time"
 
 	"github.com/0xNathanW/bittorrent-go/p2p"
@@ -17,11 +18,16 @@ func (c *Client) Run() {
 	defer close(requestQ)
 	buf := make([]byte, c.Torrent.Size)
 
-	for _, peer := range c.Peers.active {
-		c.operatePeer(peer, workQ, dataQ, requestQ)
+	for _, peer := range c.Peers {
+		go c.operatePeer(peer, workQ, dataQ, requestQ)
 	}
 
-	go c.collectPieces(buf, dataQ)
+	go func() {
+		c.collectPieces(buf, dataQ)
+		// Closing workQ causes peers to switch to seeding.
+		close(workQ)
+	}()
+
 	go c.serveRequests(buf, requestQ)
 
 	// Run tview event loop.
@@ -37,18 +43,16 @@ func (c *Client) operatePeer(
 	requestQ chan<- p2p.Request,
 ) {
 
+	c.Active.Lock()
+	c.Active.int += 1
+	c.Active.Unlock()
+
 	p.Run(c.ID, c.Torrent, workQ, dataQ, requestQ)
 	// When peer disconnects, it returns from Run().
-	c.Peers.Unlock()
 
-	delete(c.Peers.active, p.IP.String())
-	c.Peers.inactive = append(c.Peers.inactive, p.IP)
-
-	c.Peers.Lock()
-
-	// if len(c.Peers.active) == 0 {
-	// 	// Some sort of shutdown procedure.
-	// }
+	c.Active.Lock()
+	c.Active.int -= 1
+	c.Active.Unlock()
 }
 
 func (c *Client) collectPieces(buf []byte, dataQ <-chan *torrent.PieceData) {
@@ -56,7 +60,7 @@ func (c *Client) collectPieces(buf []byte, dataQ <-chan *torrent.PieceData) {
 	var done int            // Number of pieces downloaded.
 	var bytesDownloaded int // Tracks number of bytes downloaded.
 
-	sec := time.NewTicker(time.Second)
+	speedTick := time.NewTicker(time.Second)
 	sec10 := time.NewTicker(time.Second * 10)
 
 	// Collect downloaded pieces.
@@ -76,19 +80,21 @@ func (c *Client) collectPieces(buf []byte, dataQ <-chan *torrent.PieceData) {
 
 			bytesDownloaded += n
 			done++
-			c.UI.App.QueueUpdateDraw(func() { c.UI.UpdateProgress(done) })
+			c.UI.App.QueueUpdateDraw(func() {
+				c.UI.UpdateProgress(done)
+				c.UI.UpdateTable()
+			})
 
-		case <-sec.C:
+		case <-speedTick.C:
 
 			mbps := float64(bytesDownloaded) / (1024 * 1024)
-			_ = mbps
+			c.UI.App.QueueUpdateDraw(func() { c.UI.Graph.Update(mbps) })
+			bytesDownloaded = 0
 
 		case <-sec10.C:
 			go c.chokingAlgo()
 		}
 	}
-
-	c.seed()
 	// Write output buffer to file.
 	c.writeToFile(buf)
 }
@@ -133,39 +139,39 @@ func (c *Client) writeToFile(buf []byte) error {
 // Allows uploading to the top 4 peers that provide the most data.
 func (c *Client) chokingAlgo() {
 
-	// last := make(map[*p2p.Peer][2]int)
-	// ticker := time.NewTicker(time.Second * 10)
+	top := make([]struct {
+		peer string
+		down int
+	}, len(c.Peers))
 
-	// for range ticker.C {
+	for a, peer := range c.Peers {
 
-	// 	for _, peer := range c.Peers {
-	// 		if peer.Active {
-	// 			peer.DownloadRate = peer.Downloaded - last[peer][0]
-	// 			peer.UploadRate = peer.Uploaded - last[peer][1]
-	// 			last[peer] = [2]int{peer.Downloaded, peer.Uploaded}
-	// 		} else {
-	// 			peer.DownloadRate = 0
-	// 			peer.UploadRate = 0
-	// 		}
-	// 	}
+		per10down := peer.Rates.Downloaded - peer.Rates.LastDownloaded
+		peer.Rates.LastDownloaded = peer.Rates.Downloaded
 
-	// 	// uploadSort := c.Peers
-	// 	// sort.Slice(uploadSort, func(i, j int) bool {
-	// 	// 	return uploadSort[i].DownloadRate > uploadSort[j].DownloadRate
-	// 	// })
+		top = append(top, struct {
+			peer string
+			down int
+		}{peer: a, down: per10down})
+	}
 
-	// 	// for i := 0; i < 4; i++ {
-	// 	// 	for _, peer := range c.Peers {
+	// Sort peers by download rate.
+	sort.Slice(top, func(i, j int) bool {
+		return top[i].down > top[j].down
+	})
 
-	// 	// 		if peer.IP.String() == uploadSort[i].IP.String() {
-	// 	// 			peer.Downloading = true
-	// 	// 			peer.Activity.Write([]byte("[green]serving requests from peer.\n\n[-]"))
-	// 	// 		} else {
-	// 	// 			peer.Downloading = false
-	// 	// 		}
-	// 	// 	}
-	// 	// }
-	// }
+	for a, peer := range c.Peers {
+		for _, t := range top {
+
+			if a == t.peer {
+				peer.Downloading = true
+			} else {
+				peer.Downloading = false
+			}
+		}
+	}
+
+	c.UI.App.QueueUpdateDraw(func() { c.UI.UpdateTable() })
 }
 
 func (c *Client) serveRequests(buf []byte, requestQ <-chan p2p.Request) {
@@ -187,8 +193,4 @@ func (c *Client) serveRequests(buf []byte, requestQ <-chan p2p.Request) {
 
 		request.Peer.BlockOut <- msg.Block(request.Idx, request.Offset, block)
 	}
-}
-
-func (c *Client) seed() {
-
 }

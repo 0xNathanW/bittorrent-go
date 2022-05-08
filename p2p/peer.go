@@ -16,15 +16,13 @@ type Peer struct {
 	IP       *net.TCPAddr
 	Conn     *net.TCPConn
 	BitField msg.Bitfield
+	Start    time.Time
 
 	Active  bool
 	strikes int
 
-	DownloadRate int
-	UploadRate   int
+	Rates *Rates
 
-	Downloaded  int
-	Uploaded    int
 	Downloading bool // Should upload to best 4 peers.
 	BlockOut    chan []byte
 
@@ -43,24 +41,18 @@ type Request struct {
 	Length int
 }
 
-func NewPeer(address *net.TCPAddr, bitfieldLength int) (*Peer, error) {
+type Rates struct {
+	Downloaded int
+	Uploaded   int
 
-	conn, err := net.DialTimeout("tcp", address.String(), 10*time.Second)
-	if err != nil {
-		return nil, fmt.Errorf("could not connect to peer: %v", err)
-	}
-	tcpConn, ok := conn.(*net.TCPConn)
-	if !ok {
-		return nil, fmt.Errorf("could not cast connection to TCPConn")
-	}
+	LastDownloaded int
+	LastUploaded   int
+}
 
-	if err := tcpConn.SetKeepAlive(true); err != nil {
-		return nil, fmt.Errorf("could not set keep alive: %v", err)
-	}
+func NewPeer(address *net.TCPAddr, bitfieldLength int) *Peer {
 
 	p := &Peer{
 		IP:       address,
-		Conn:     tcpConn,
 		BitField: make(msg.Bitfield, bitfieldLength),
 
 		Active:       false,
@@ -68,6 +60,8 @@ func NewPeer(address *net.TCPAddr, bitfieldLength int) (*Peer, error) {
 		Interested:   false,
 		IsChoking:    true,
 		IsInterested: false,
+
+		Rates: &Rates{},
 
 		Activity: tview.NewTextView().
 			SetScrollable(true).
@@ -82,9 +76,7 @@ func NewPeer(address *net.TCPAddr, bitfieldLength int) (*Peer, error) {
 		SetTitleAlign(tview.AlignLeft).
 		SetBorderPadding(1, 1, 2, 2)
 
-	p.Activity.Write([]byte("[green]Connected to peer[-]\n\n"))
-
-	return p, nil
+	return p
 }
 
 // Serialised message is written to peer connection.
@@ -216,6 +208,18 @@ func (p *Peer) exchangeHandshake(ID, infoHash [20]byte) error {
 // Establish peer ensures a verified connection to a peer
 // and that we have information about what pieces the peer has.
 func (p *Peer) establishPeer(ID, infoHash [20]byte) error {
+
+	// Connect to peer.
+	conn, err := net.DialTimeout("tcp", p.IP.String(), 10*time.Second)
+	if err != nil {
+		return err
+	}
+
+	tcpConn := conn.(*net.TCPConn)
+	if err := tcpConn.SetKeepAlive(true); err != nil {
+		return err
+	}
+	p.Conn = tcpConn
 
 	if err := p.exchangeHandshake(ID, infoHash); err != nil {
 		return err

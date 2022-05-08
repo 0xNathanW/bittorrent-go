@@ -61,7 +61,7 @@ func NewUI(t *torrent.Torrent, peers map[string]*p2p.Peer) (*UI, error) {
 	ui.rightFlex.AddItem(ui.Graph.Object, 0, 1, false)
 	ui.rightFlex.AddItem(ui.Progress, 5, 0, false)
 
-	ui.PeerTable = ui.newPeerTable(peers)
+	ui.newPeerTable(peers)
 	ui.PeerTable.SetSelectionChangedFunc(
 		func(row, column int) {
 			ui.PeerPages.SwitchToPage(ui.PeerTable.GetCell(row, 0).Text)
@@ -130,7 +130,7 @@ func (ui *UI) UpdateProgress(done int) {
 	ui.Progress.SetValue(done)
 }
 
-func (ui *UI) newPeerTable(peers map[string]*p2p.Peer) *tview.Table {
+func (ui *UI) newPeerTable(peers map[string]*p2p.Peer) {
 
 	table := tview.NewTable().
 		SetSelectable(true, false). // Enable row selection.
@@ -146,9 +146,9 @@ func (ui *UI) newPeerTable(peers map[string]*p2p.Peer) *tview.Table {
 	columnNames := []string{
 		"IP",
 		"Active",
-		"Down Speed",
-		"Up Speed",
-		"Downloading",
+		"Down",
+		"Up",
+		"Reciprocate",
 		"Choked",
 		"Choking",
 	}
@@ -178,13 +178,12 @@ func (ui *UI) newPeerTable(peers map[string]*p2p.Peer) *tview.Table {
 				Align:     tview.AlignLeft,
 				Color:     colour,
 			})
-
 		}
 		row++
 	}
-	ui.UpdateTable()
 
-	return table
+	ui.PeerTable = table
+	ui.UpdateTable()
 }
 
 func newPeerPages(peers map[string]*p2p.Peer) *tview.Pages {
@@ -192,7 +191,7 @@ func newPeerPages(peers map[string]*p2p.Peer) *tview.Pages {
 	peerPages := tview.NewPages()
 
 	for address, peer := range peers {
-		peerPages.AddPage(address, peer.Activity, true, false)
+		peerPages.AddPage(strings.Split(address, ":")[0], peer.Activity, true, false)
 	}
 
 	name, _ := peerPages.GetFrontPage()
@@ -205,9 +204,9 @@ func (ui *UI) UpdateTable() {
 	columnNames := []string{
 		"IP",
 		"Active",
-		"Down (MB/10s)",
-		"Up (MB/10s)",
-		"Downloading",
+		"Down",
+		"Up",
+		"Reciprocate",
 		"Choked",
 		"Choking",
 	}
@@ -221,7 +220,7 @@ func (ui *UI) UpdateTable() {
 			switch name {
 
 			case "IP":
-				cell.SetText(peer.IP.String())
+				cell.SetText(strings.Split(peer.IP.String(), ":")[0])
 
 			case "Active":
 				cell.SetText(boolString(peer.Active))
@@ -231,13 +230,15 @@ func (ui *UI) UpdateTable() {
 					cell.SetTextColor(tcell.ColorRed)
 				}
 
-			case "Down (MB/10s)":
-				cell.SetText(fmt.Sprintf("%4.2f", float64(peer.DownloadRate)/1024/1024))
+			case "Down":
+				cell.SetText(fmt.Sprintf("%4.2f", (float64(peer.Rates.Downloaded)/1024/1024)/
+					(time.Since(peer.Start).Seconds())))
 
-			case "Up (MB/10s)":
-				cell.SetText(fmt.Sprintf("%4.2f", float64(peer.UploadRate)/1024))
+			case "Up":
+				cell.SetText(fmt.Sprintf("%4.2f", (float64(peer.Rates.Uploaded)/1024/1024)/
+					(time.Since(peer.Start).Seconds())))
 
-			case "Downloading":
+			case "Reciprocate":
 				cell.SetText(boolString(peer.Downloading))
 				if peer.Downloading {
 					cell.SetTextColor(tcell.ColorBlue)

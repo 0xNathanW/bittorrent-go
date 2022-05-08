@@ -20,11 +20,11 @@ func (p *Peer) Run(
 ) {
 
 	if err := p.establishPeer(ID, t.InfoHash); err != nil {
-		p.Activity.Write([]byte(fmt.Sprintf("[red]failed to establish peer: %v.[-]\n\n", err)))
-		p.Conn.Close()
+		p.Activity.Write([]byte(fmt.Sprintf("[red]%v[-]\n\n", err)))
 		return
 	}
 	p.Active = true
+	p.Start = time.Now()
 
 	defer p.disconnect()
 
@@ -36,7 +36,7 @@ func (p *Peer) Run(
 				p.Activity.Write([]byte(fmt.Sprintf("[red]failed to send block: %v.[-]\n\n", err)))
 				continue
 			}
-			p.Uploaded += (len(block) - 8)
+			p.Rates.Uploaded += (len(block) - 8)
 
 		case piece, ok := <-workQ:
 
@@ -172,7 +172,7 @@ func (p *Peer) downloadPiece(piece torrent.Piece, dataQ chan<- *torrent.PieceDat
 	// send piece to dataQ.
 	dataQ <- &torrent.PieceData{Index: piece.Index, Data: data}
 	p.Activity.Write([]byte(fmt.Sprintf("[blue]downloaded piece %d.[-]\n\n", piece.Index)))
-	p.Downloaded += piece.Length
+	p.Rates.Downloaded += piece.Length
 
 	return nil
 }

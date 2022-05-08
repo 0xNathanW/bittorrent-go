@@ -2,7 +2,6 @@ package client
 
 import (
 	"encoding/binary"
-	"errors"
 	"fmt"
 	"math/rand"
 	"net"
@@ -21,17 +20,17 @@ import (
 type Client struct {
 	ID       [20]byte // The client's unique ID.
 	Torrent  *torrent.Torrent
-	Peers    *Peers
+	Peers    map[string]*p2p.Peer
+	Active   *active
 	Tracker  *tracker.Tracker
 	BitField message.Bitfield
 	UI       *ui.UI
 	Seed     *sync.Cond // Used to signal when to start seeding.
 }
 
-type Peers struct {
-	sync.RWMutex
-	active   map[string]*p2p.Peer // Maps peer IP to peers.
-	inactive []*net.TCPAddr
+type active struct {
+	sync.Mutex
+	int
 }
 
 // Create a new client instance.
@@ -47,6 +46,7 @@ func NewClient(path string) (*Client, error) {
 	client := &Client{ // Client instance.
 		ID:      idGenerator(),
 		Torrent: torrent,
+		Active:  &active{int: 0},
 	}
 
 	// Generate empty bitfield.
@@ -68,15 +68,12 @@ func NewClient(path string) (*Client, error) {
 	if err = client.GetPeers(); err != nil {
 		return nil, err
 	}
-	fmt.Println("found", len(client.Peers.active), "peers")
-	fmt.Println("found", len(client.Peers.inactive), "inactive peers")
 
-	ui, err := ui.NewUI(torrent, client.Peers.active)
+	ui, err := ui.NewUI(torrent, client.Peers)
 	if err != nil {
 		return nil, err
 	}
 	client.UI = ui
-	client.Peers.RLock()
 
 	return client, nil
 }
@@ -91,21 +88,18 @@ func idGenerator() [20]byte {
 
 // Client retrieves and parses peers from tracker.
 func (c *Client) GetPeers() error {
-	fmt.Println("Retrieving peers...")
+
 	peerString, err := c.Tracker.RequestPeers()
 	if err != nil {
 		return err
 	}
 
+	fmt.Println("here")
+
 	// Each peer is a string of length 6.
 	numPeers := len(peerString) / 6
-	c.Peers = &Peers{
-		active:   map[string]*p2p.Peer{},
-		inactive: []*net.TCPAddr{},
-	}
-	c.Peers.Lock()
 
-	wg := sync.WaitGroup{}
+	peers := make(map[string]*p2p.Peer, numPeers)
 
 	for i := 0; i < numPeers; i++ {
 
@@ -128,27 +122,10 @@ func (c *Client) GetPeers() error {
 			continue
 		}
 
-		wg.Add(1)
-		go func(i int) {
-			defer wg.Done()
+		peers[address.String()] = p2p.NewPeer(address, len(c.BitField))
 
-			peer, err := p2p.NewPeer(address, len(c.BitField))
-			if err != nil {
-				c.Peers.Unlock()
-				c.Peers.active[address.String()] = peer
-				c.Peers.Lock()
-			} else {
-				c.Peers.Unlock()
-				c.Peers.inactive = append(c.Peers.inactive, address)
-				c.Peers.Lock()
-			}
-		}(i)
 	}
-
-	wg.Wait()
-	if len(c.Peers.active) == 0 {
-		return errors.New("no peers found")
-	}
+	c.Peers = peers
 
 	return nil
 }
