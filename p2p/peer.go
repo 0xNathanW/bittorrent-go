@@ -23,8 +23,8 @@ type Peer struct {
 
 	Rates *Rates
 
-	Downloading bool // Should upload to best 4 peers.
-	BlockOut    chan []byte
+	Downloading bool        // Should upload to best 4 peers.
+	BlockOut    chan []byte // Channel for sending blocks.
 
 	Choked       bool
 	Interested   bool
@@ -55,6 +55,7 @@ func NewPeer(address *net.TCPAddr, bitfieldLength int) *Peer {
 		IP:       address,
 		BitField: make(msg.Bitfield, bitfieldLength),
 
+		// Default.
 		Active:       false,
 		Choked:       true,
 		Interested:   false,
@@ -130,7 +131,6 @@ func (p *Peer) read() (*msg.Message, error) {
 	return message, nil
 }
 
-// Have messages are received semi-randomly.
 // We read consecutive have msgs, stopping once we retrieve a non-have msg.
 func (p *Peer) handleHave(m *msg.Message) {
 	p.BitField.SetPiece(int(binary.BigEndian.Uint32(m.Payload[0:4])))

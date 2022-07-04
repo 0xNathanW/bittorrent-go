@@ -142,9 +142,6 @@ func (ui *UI) newPeerTable(peers map[string]*p2p.Peer) {
 		SetSelectedStyle(s).
 		SetEvaluateAllRows(true).
 		SetFixed(1, 0). // Fix the first row (column labels).
-		// SetSelectedStyle(tcell.StyleDefault.
-		// 	Foreground(tcell.ColorBlack).
-		// 	Background(tcell.ColorWhite)).
 		SetSeparator(tview.Borders.Vertical)
 
 	table.SetBorder(true).SetTitle(" Peers ")
@@ -164,7 +161,7 @@ func (ui *UI) newPeerTable(peers map[string]*p2p.Peer) {
 
 		cell := &tview.TableCell{
 			Text:          columnNames[i],
-			Align:         tview.AlignLeft,
+			Align:         tview.AlignCenter,
 			Color:         tcell.ColorAquaMarine,
 			NotSelectable: true,
 			Attributes:    tcell.AttrUnderline,
@@ -180,10 +177,15 @@ func (ui *UI) newPeerTable(peers map[string]*p2p.Peer) {
 	for _, peer := range peers {
 		for c := range columnNames {
 
+			var alignment int // Align all center apart from IP column.
+			if c != 0 {
+				alignment = 1
+			}
+
 			colour := tcell.ColorWhite
 			cell := &tview.TableCell{
 				Reference: peer,
-				Align:     tview.AlignLeft,
+				Align:     alignment,
 				Color:     colour,
 			}
 			cell.SetTransparency(true).
@@ -242,6 +244,7 @@ func (ui *UI) UpdateTable() {
 					cell.SetTextColor(tcell.ColorRed)
 				}
 
+			// For display, down/upload speed simply amount/(seconds since start)
 			case "Down":
 				cell.SetText(fmt.Sprintf("%4.2f", (float64(peer.Rates.Downloaded)/1024/1024)/
 					(time.Since(peer.Start).Seconds())))
@@ -263,7 +266,7 @@ func (ui *UI) UpdateTable() {
 				if !peer.Choked {
 					cell.SetTextColor(tcell.ColorBlue)
 				} else {
-					cell.SetTextColor(tcell.ColorDefault)
+					cell.SetTextColor(tcell.ColorWhite)
 				}
 
 			case "IsChoking":
@@ -271,7 +274,7 @@ func (ui *UI) UpdateTable() {
 				if !peer.IsChoking {
 					cell.SetTextColor(tcell.ColorBlue)
 				} else {
-					cell.SetTextColor(tcell.ColorDefault)
+					cell.SetTextColor(tcell.ColorWhite)
 				}
 
 			default:

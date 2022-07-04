@@ -86,7 +86,7 @@ func (c *Client) collectPieces(buf []byte, dataQ <-chan *torrent.PieceData) {
 			})
 
 		case <-speedTick.C:
-
+			// Update graph with new mb per second speed.
 			mbps := float64(bytesDownloaded) / (1024 * 1024)
 			c.UI.App.QueueUpdateDraw(func() { c.UI.Graph.Update(mbps) })
 			bytesDownloaded = 0
@@ -144,7 +144,7 @@ func (c *Client) chokingAlgo() {
 		down int
 	}, len(c.Peers))
 
-	for a, peer := range c.Peers {
+	for _, peer := range c.Peers {
 
 		per10down := peer.Rates.Downloaded - peer.Rates.LastDownloaded
 		peer.Rates.LastDownloaded = peer.Rates.Downloaded
@@ -152,7 +152,7 @@ func (c *Client) chokingAlgo() {
 		top = append(top, struct {
 			peer string
 			down int
-		}{peer: a, down: per10down})
+		}{peer: peer.IP.String(), down: per10down})
 	}
 
 	// Sort peers by download rate.
@@ -160,13 +160,12 @@ func (c *Client) chokingAlgo() {
 		return top[i].down > top[j].down
 	})
 
-	for a, peer := range c.Peers {
-		for _, t := range top {
+	for _, peer := range c.Peers {
+		peer.Downloading = false
 
-			if a == t.peer {
+		for _, t := range top[:4] {
+			if peer.IP.String() == t.peer && t.down > 0 {
 				peer.Downloading = true
-			} else {
-				peer.Downloading = false
 			}
 		}
 	}

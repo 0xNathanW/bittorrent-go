@@ -36,7 +36,7 @@ func (p *Peer) Run(
 				p.Activity.Write([]byte(fmt.Sprintf("[red]failed to send block: %v.[-]\n\n", err)))
 				continue
 			}
-			p.Rates.Uploaded += (len(block) - 8)
+			p.Rates.Uploaded += (len(block) - 8) // -8 for header info.
 
 		case piece, ok := <-workQ:
 
