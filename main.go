@@ -11,7 +11,7 @@ import (
 
 func main() {
 
-	// Torrent path is first argument.
+	// Torrent path is first arg.
 	torrentPath := os.Args[1]
 	if err := verifyPath(torrentPath); err != nil {
 		log.Fatal(err)

@@ -132,13 +132,19 @@ func (ui *UI) UpdateProgress(done int) {
 
 func (ui *UI) newPeerTable(peers map[string]*p2p.Peer) {
 
+	s := tcell.Style{}.
+		Background(tcell.ColorLime).
+		Foreground(tcell.ColorBlack).
+		Blink(true)
+
 	table := tview.NewTable().
 		SetSelectable(true, false). // Enable row selection.
+		SetSelectedStyle(s).
 		SetEvaluateAllRows(true).
 		SetFixed(1, 0). // Fix the first row (column labels).
-		SetSelectedStyle(tcell.StyleDefault.
-			Foreground(tcell.ColorBlack).
-			Background(tcell.ColorWhite)).
+		// SetSelectedStyle(tcell.StyleDefault.
+		// 	Foreground(tcell.ColorBlack).
+		// 	Background(tcell.ColorWhite)).
 		SetSeparator(tview.Borders.Vertical)
 
 	table.SetBorder(true).SetTitle(" Peers ")
@@ -150,18 +156,23 @@ func (ui *UI) newPeerTable(peers map[string]*p2p.Peer) {
 		"Up",
 		"Reciprocate",
 		"Choked",
-		"Choking",
+		"IsChoking",
 	}
 
 	// First row is the column names.
 	for i := range columnNames {
-		table.SetCell(0, i, &tview.TableCell{
+
+		cell := &tview.TableCell{
 			Text:          columnNames[i],
 			Align:         tview.AlignLeft,
 			Color:         tcell.ColorAquaMarine,
 			NotSelectable: true,
 			Attributes:    tcell.AttrUnderline,
-		})
+		}
+		cell.SetTransparency(true).
+			SetExpansion(1)
+
+		table.SetCell(0, i, cell)
 	}
 
 	// Fill table.
@@ -169,15 +180,16 @@ func (ui *UI) newPeerTable(peers map[string]*p2p.Peer) {
 	for _, peer := range peers {
 		for c := range columnNames {
 
-			var text string
 			colour := tcell.ColorWhite
-
-			table.SetCell(row, c, &tview.TableCell{
+			cell := &tview.TableCell{
 				Reference: peer,
-				Text:      text,
 				Align:     tview.AlignLeft,
 				Color:     colour,
-			})
+			}
+			cell.SetTransparency(true).
+				SetExpansion(1)
+
+			table.SetCell(row, c, cell)
 		}
 		row++
 	}
@@ -208,7 +220,7 @@ func (ui *UI) UpdateTable() {
 		"Up",
 		"Reciprocate",
 		"Choked",
-		"Choking",
+		"IsChoking",
 	}
 
 	for r := 1; r < ui.PeerTable.GetRowCount(); r++ {
@@ -254,7 +266,7 @@ func (ui *UI) UpdateTable() {
 					cell.SetTextColor(tcell.ColorDefault)
 				}
 
-			case "Choking":
+			case "IsChoking":
 				cell.SetText(boolString(peer.IsChoking))
 				if !peer.IsChoking {
 					cell.SetTextColor(tcell.ColorBlue)

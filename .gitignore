@@ -17,3 +17,4 @@
 # vs code cache
 .vscode
 main
+.DS_Store
