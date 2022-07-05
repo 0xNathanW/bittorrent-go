@@ -1,7 +1,7 @@
 # **BitTorrent-Go** #
 A client for the file-sharing protocol BitTorrent.  Will connect to other peers on a peer2peer network to download file specified in a .torrent file.  Information such as peer, activity, download speed and download progress will be displayed on a terminal dashboard.
 
-![Demo](assets/BitTorrentGoDemo2.gif)
+![Demo](assets/)
 
 ## Installation ##
 
