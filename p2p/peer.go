@@ -273,6 +273,13 @@ func (p *Peer) buildBitfield() error {
 
 func (p *Peer) disconnect() {
 	p.Conn.Close()
+	// Reset defaults.
 	p.Active = false
+	p.Choked = true
+	p.IsChoking = true
+	p.strikes = 0
+	p.Interested = false
+	p.Start = time.Now()
+
 	p.Activity.Write([]byte("[red]peer disconnected.[-]\n\n"))
 }

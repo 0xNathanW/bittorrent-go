@@ -42,7 +42,6 @@ func (c *Client) operatePeer(
 	dataQ chan<- *torrent.PieceData,
 	requestQ chan<- p2p.Request,
 ) {
-
 	c.Active.Lock()
 	c.Active.int += 1
 	c.Active.Unlock()
@@ -60,7 +59,7 @@ func (c *Client) collectPieces(buf []byte, dataQ <-chan *torrent.PieceData) {
 	var done int            // Number of pieces downloaded.
 	var bytesDownloaded int // Tracks number of bytes downloaded.
 
-	speedTick := time.NewTicker(time.Second)
+	speedTick := time.NewTicker(time.Second / 2)
 	sec10 := time.NewTicker(time.Second * 10)
 
 	// Collect downloaded pieces.
@@ -92,6 +91,10 @@ func (c *Client) collectPieces(buf []byte, dataQ <-chan *torrent.PieceData) {
 			bytesDownloaded = 0
 
 		case <-sec10.C:
+			// Check for all inactive.
+			if c.Active.int == 0 {
+				c.shutdown()
+			}
 			go c.chokingAlgo()
 		}
 	}
@@ -192,4 +195,8 @@ func (c *Client) serveRequests(buf []byte, requestQ <-chan p2p.Request) {
 
 		request.Peer.BlockOut <- msg.Block(request.Idx, request.Offset, block)
 	}
+}
+
+func (c *Client) shutdown() {
+	panic("No active peers, unable to continue...")
 }
