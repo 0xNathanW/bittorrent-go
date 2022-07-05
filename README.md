@@ -21,6 +21,7 @@ Eg. `{.exe name} {path to .torrent file}`
 ## TODO ##
 
 - [ ] Seeding
-- [ ] Theme config
+- [ ] Display better errors
+- [ ] Deal with disconnected peers based on context
 - [ ] Magnet links
  
