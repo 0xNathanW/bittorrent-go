@@ -13,7 +13,7 @@ Build executable:
 
 ## Usage ##
 
-To use simply run the executable with an argument of the path for the .torrent file:
+To use run the executable with an argument of the path for the .torrent file:
 
 Eg. `{.exe name} {path to .torrent file}`
 
