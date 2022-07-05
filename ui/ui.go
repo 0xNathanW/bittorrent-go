@@ -29,7 +29,6 @@ type UI struct {
 	Progress  *tvxwidgets.PercentageModeGauge
 	PeerTable *tview.Table
 	PeerPages *tview.Pages
-
 	rightFlex *tview.Flex
 }
 
@@ -133,7 +132,7 @@ func (ui *UI) UpdateProgress(done int) {
 func (ui *UI) newPeerTable(peers map[string]*p2p.Peer) {
 
 	s := tcell.Style{}.
-		Background(tcell.ColorLime).
+		Background(tcell.ColorWhite).
 		Foreground(tcell.ColorBlack).
 		Blink(true)
 
@@ -162,7 +161,7 @@ func (ui *UI) newPeerTable(peers map[string]*p2p.Peer) {
 		cell := &tview.TableCell{
 			Text:          columnNames[i],
 			Align:         tview.AlignCenter,
-			Color:         tcell.ColorAquaMarine,
+			Color:         tcell.ColorOrange,
 			NotSelectable: true,
 			Attributes:    tcell.AttrUnderline,
 		}
@@ -246,12 +245,22 @@ func (ui *UI) UpdateTable() {
 
 			// For display, down/upload speed simply amount/(seconds since start)
 			case "Down":
-				cell.SetText(fmt.Sprintf("%4.2f", (float64(peer.Rates.Downloaded)/1024/1024)/
-					(time.Since(peer.Start).Seconds())))
+				if peer.Active {
+					cell.SetText(fmt.Sprintf("%4.2f",
+						(float64(peer.Rates.Downloaded)/1024/1024)/
+							(time.Since(peer.Start).Seconds())))
+				} else {
+					cell.SetText(fmt.Sprintf("%4.2f", float64(0)))
+				}
 
 			case "Up":
-				cell.SetText(fmt.Sprintf("%4.2f", (float64(peer.Rates.Uploaded)/1024/1024)/
-					(time.Since(peer.Start).Seconds())))
+				if peer.Active {
+					cell.SetText(fmt.Sprintf("%4.2f",
+						(float64(peer.Rates.Uploaded)/1024/1024)/
+							(time.Since(peer.Start).Seconds())))
+				} else {
+					cell.SetText(fmt.Sprintf("%4.2f", float64(0)))
+				}
 
 			case "Reciprocate":
 				cell.SetText(boolString(peer.Downloading))

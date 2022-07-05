@@ -19,7 +19,7 @@ func newGraph() *Graph {
 			SetScrollable(false).
 			SetWrap(false),
 
-		Data: make([]float64, 100),
+		Data: make([]float64, 15),
 	}
 
 	graph.Object.
@@ -35,15 +35,24 @@ func newGraph() *Graph {
 // keeping it the same width.
 func (g *Graph) Update(data float64) {
 
-	g.Data = append(g.Data, data)
-	g.Data = g.Data[1:]
-
+	g.smooth(data)
 	_, _, width, height := g.Object.GetInnerRect()
 
 	g.Object.SetText(asciigraph.Plot(g.Data,
 		asciigraph.Width(width),
 		asciigraph.Height(height),
-		asciigraph.Precision(1),
+		asciigraph.Precision(2),
 		asciigraph.Caption("Download Speed (MB/s)"),
 	))
+}
+
+func (g *Graph) smooth(data float64) {
+
+	for i := 9; i > 5; i-- {
+		data = data + g.Data[i]
+	}
+	data = data / 5
+
+	g.Data = append(g.Data, data)
+	g.Data = g.Data[1:]
 }

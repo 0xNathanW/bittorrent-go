@@ -3,6 +3,7 @@ package client
 import (
 	"encoding/binary"
 	"fmt"
+	"log"
 	"math/rand"
 	"net"
 	"strconv"
@@ -26,6 +27,8 @@ type Client struct {
 	BitField message.Bitfield
 	UI       *ui.UI
 	Seed     *sync.Cond // Used to signal when to start seeding.
+
+	Logger *log.Logger
 }
 
 type active struct {
