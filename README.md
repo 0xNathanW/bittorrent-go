@@ -3,6 +3,7 @@ A client for the file-sharing protocol BitTorrent.  Will connect to other peers 
 
 ![Demo](assets/BitTorrentGoDemo.gif)
 
+IP's randomised and detailed errors omitted in demo GIF.
 ## Installation ##
 
 Clone the repository:
