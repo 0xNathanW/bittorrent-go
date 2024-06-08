@@ -5,7 +5,6 @@ import (
 	"log"
 	"os"
 	"path"
-
 	cli "github.com/0xNathanW/bittorrent-go/client"
 )
 

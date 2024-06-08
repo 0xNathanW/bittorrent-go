@@ -18,11 +18,3 @@ To use run the executable with an argument of the path for the .torrent file:
 
 Eg. `{.exe name} {path to .torrent file}`
 
-
-## TODO ##
-
-- [ ] Seeding
-- [ ] Display better errors
-- [ ] Deal with disconnected peers based on context
-- [ ] Magnet links
- 
